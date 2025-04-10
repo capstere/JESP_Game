@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>JESP: Walking Simulator for the Emotionally Paralyzed</title>
+    <link rel="stylesheet" href="css/styles.css">
+    <meta name="description" content="Experience the meaningless wandering of JESP, a man lost in the routine of everyday life.">
+</head>
+<body>
+    <!-- Title Screen -->
+    <div id="title-screen" class="screen">
+        <div class="title-container">
+            <h1 class="game-title">JESP</h1>
+            <h2 class="game-subtitle">Walking Simulator for the Emotionally Paralyzed</h2>
+            
+            <div class="menu-container">
+                <button id="start-game-btn" class="menu-btn">Start Game</button>
+                <button id="instructions-btn" class="menu-btn">Instructions (but why?)</button>
+                <button id="submit-score-btn" class="menu-btn">Submit Score</button>
+                <button id="leaderboard-btn" class="menu-btn">View Leaderboard</button>
+                <button id="exit-btn" class="menu-btn">Exit to Real Life (Not Recommended)</button>
+            </div>
+        </div>
+        <div class="audio-controls">
+            <button id="mute-btn" class="control-btn">🔊</button>
+        </div>
+    </div>
+    
+    <!-- Instructions Screen -->
+    <div id="instructions-screen" class="screen hidden">
+        <div class="instructions-container">
+            <h2>Instructions</h2>
+            <div class="instruction-text">
+                <p>Welcome to JESP: Walking Simulator for the Emotionally Paralyzed.</p>
+                <p>In this game, you play as JESP, a man with no direction and increasingly fewer reasons to move.</p>
+                <p>Controls: WASD or on-screen arrows. That's it.</p>
+                <p>Objective: None.</p>
+                <p>Score: Purely ornamental.</p>
+                <p>Good luck. Or don't. It won't matter.</p>
+            </div>
+            <button class="back-btn menu-btn">Return to Menu</button>
+        </div>
+    </div>
+    
+    <!-- Leaderboard Screen -->
+    <div id="leaderboard-screen" class="screen hidden">
+        <div class="leaderboard-container">
+            <h2>Top Wanderers of Meaningless Motion</h2>
+            <div id="leaderboard-entries">
+                <!-- Leaderboard entries will be inserted here -->
+            </div>
+            <button id="reset-leaderboard" class="menu-btn">Reset Leaderboard</button>
+            <button class="back-btn menu-btn">Return to Menu</button>
+        </div>
+    </div>
+    
+    <!-- Submit Score Screen -->
+    <div id="submit-score-screen" class="screen hidden">
+        <div class="submit-score-container">
+            <h2>Record Your Futile Effort</h2>
+            <p>You've walked <span id="final-score">0</span> steps to nowhere in particular.</p>
+            
+            <form id="score-form">
+                <div class="form-group">
+                    <label for="player-name">Your Name (or remain anonymous):</label>
+                    <input type="text" id="player-name" placeholder="Anonymous Wanderer">
+                </div>
+                <button type="submit" class="menu-btn">Submit to Void</button>
+            </form>
+            
+            <button class="back-btn menu-btn">Return to Menu</button>
+        </div>
+    </div>
+    
+    <!-- Game Screen -->
+    <div id="game-container" class="screen hidden">
+        <!-- Game world with clear boundaries -->
+        <div id="world">
+            <!-- Game boundary -->
+            <div id="game-boundary"></div>
+            
+            <!-- Spectators area -->
+            <div id="spectators-area">
+                <div class="window left-window">
+                    <div class="spectator"></div>
+                </div>
+                <div class="window right-window">
+                    <div class="spectator"></div>
+                </div>
+            </div>
+            
+            <!-- Interactive elements -->
+            <div id="soda-can" class="interactive-object"></div>
+            <div id="tumble-bush" class="interactive-object"></div>
+            
+            <!-- JESP character -->
+            <div id="jesp">
+                <div class="rain-cloud"></div>
+                <div class="character">
+                    <div class="head">
+                        <div class="eyes"></div>
+                        <div class="mouth"></div>
+                    </div>
+                    <div class="body"></div>
+                    <div class="arms"></div>
+                    <div class="legs"></div>
+                </div>
+                <div class="sigh-bubble hidden">*sigh*</div>
+            </div>
+            
+            <!-- Stress events container -->
+            <div id="stress-events-container"></div>
+        </div>
+        
+        <!-- Mobile controls -->
+        <div id="mobile-controls">
+            <div class="control-row">
+                <div class="spacer"></div>
+                <button id="up-btn" class="control-btn">↑</button>
+                <div class="spacer"></div>
+            </div>
+            <div class="control-row">
+                <button id="left-btn" class="control-btn">←</button>
+                <div class="spacer"></div>
+                <button id="right-btn" class="control-btn">→</button>
+            </div>
+            <div class="control-row">
+                <div class="spacer"></div>
+                <button id="down-btn" class="control-btn">↓</button>
+                <div class="spacer"></div>
+            </div>
+        </div>
+        
+        <!-- Game HUD -->
+        <div id="game-hud">
+            <div id="step-counter">
+                <p>Steps Toward Nowhere: <span id="step-count">0</span></p>
+                <p id="step-message">Are you... proud?</p>
+            </div>
+            <button id="menu-btn" class="control-btn">Menu</button>
+        </div>
+    </div>
+    
+    <!-- Audio elements -->
+    <div id="audio-container" class="hidden">
+        <!-- Audio elements will be created dynamically -->
+    </div>
+    
+    <!-- Game scripts -->
+    <script src="js/utils.js"></script>
+    <script src="js/audio.js"></script>
+    <script src="js/leaderboard.js"></script>
+    <script src="js/character.js"></script>
+    <script src="js/stressEvents.js"></script>
+    <script src="js/controls.js"></script>
+    <script src="js/menu.js"></script>
+    <script src="js/game.js"></script>
+</body>
+</html>
