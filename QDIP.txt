@@ -1,3 +1,20 @@
+Kolumn: IPT – Test results
+Har dessa olika resultat:
+Approved
+Rejected
+Resampling
+Approved after resample
+Rejected after resample
+Extra testning
+Extra testning
+Blankt
+
+Kolumn: Packing info 
+Har dessa olika resultat:
+Pack
+Don't pack (IPT)
+Don't pack (MFI)
+
 Ja. Jag har nu gjort själva fältkartläggningen mot de riktiga upstream-tabellerna, och Delivery-delen kan bli betydligt bättre än ett vanligt cause-diagram.
 
 Det viktigaste fyndet är Historical Production Orders. Den har redan tre separata tidskomponenter för IPT: IPT LT Minutes, IPT Compiling LT Minutes och IPT Review LT Minutes. Den har dessutom IS Resampling, IS Retest, IS NC, IS LFI, IS IPT Error och den sammanfattande kategorin NC, LFI or Other.   I CSV-exemplet kan vi dessutom verifiera att komponenterna faktiskt bryter ned total Lead time: order 1118803 har 1022 + 206 + 102 minuter = 22,17 h, vilket motsvarar Lead time = 22.166666. För 1118479 blir 2430 + 240 + 2790 = 91 h, exakt samma som Lead time = 91.
