@@ -1,3 +1,53 @@
+Ja. Jag har nu gjort själva fältkartläggningen mot de riktiga upstream-tabellerna, och Delivery-delen kan bli betydligt bättre än ett vanligt cause-diagram.
+
+Det viktigaste fyndet är Historical Production Orders. Den har redan tre separata tidskomponenter för IPT: IPT LT Minutes, IPT Compiling LT Minutes och IPT Review LT Minutes. Den har dessutom IS Resampling, IS Retest, IS NC, IS LFI, IS IPT Error och den sammanfattande kategorin NC, LFI or Other.   I CSV-exemplet kan vi dessutom verifiera att komponenterna faktiskt bryter ned total Lead time: order 1118803 har 1022 + 206 + 102 minuter = 22,17 h, vilket motsvarar Lead time = 22.166666. För 1118479 blir 2430 + 240 + 2790 = 91 h, exakt samma som Lead time = 91.
+
+Det betyder att Delivery Lagging inte bara behöver säga vilka causes som finns. Vi kan svara på två olika frågor samtidigt:
+
+Var förlorades tiden? → Testing / Compiling / Review
+Vad hände med ordern? → Resampling / Retest / NC / LFI / IPT Error
+
+Det är precis den typ av driveranalys som är användbar i ett QDIP-möte.
+
+För Delivery Leading har vi också bra data. Active Production Orders innehåller IPT LT, IS IPT, IPT testing in progress, IPT - Test results, IPT - LFI, is NC, IPT - Aborted at bag, REWORK from SAP order#, Review LT Minutes och Category. Viktigast: den riktiga Filter IPT/FQC finns faktiskt där.    Och vårt kanoniska live-measure använder exakt IPT LT >= 10, Filter IPT/FQC = 1, Order# som börjar 11, och DISTINCTCOUNT(Order#).
+
+En viktig begränsning ska vi inte fuska bort: Active Production Orders är current-state DirectQuery. Våra dagliga Delivery Leading-snapshots sparar resultatvärdet, men FactMetricResult innehåller ingen historisk IS IPT/driver-fördelning.   Därför kan vi visa historisk månadstrend för Delivery Leading, men driverpanelen blir Current WIP driver — live för aktuell månad. Vi ska inte låtsas att dagens Testing/Reviewing-fördelning representerar hela en gammal fiskalmånad. Om vi senare verkligen vill ha historisk Leading-driver kan 09:00-flödet utökas med driver-snapshots, men det är ett separat arkitekturbeslut.
+
+Nu bygger vi sidan — första riktiga steget
+
+Det fina är att vi inte behöver skapa ett nytt trendmått. Du har redan exakt det vi behöver:
+
+[KPI Result To Date]
+
+Det räknar [KPI Result] kumulativt fram till varje datum inom det valda datumurvalet. [KPI Result] växlar redan korrekt mellan Checklist, Incident, Amplicon, NRFT, LFI, Delivery Leading och Delivery Lagging.
+
+Gör nu bara följande på 02 Trend & Drivers:
+
+1. Kopiera Fiscal Month-slicern från Overview till sidan. Behåll DimDate[FiscalMonthSelector], single select. Synka den gärna mellan 01 Overview och 02 Trend & Drivers.
+2. Lägg en ny slicer med DimMetric[MetricName], single select.
+3. Lägg tre Cards högst upp: [KPI Result Display], [KPI Target Display] och [KPI Status].
+4. Lägg ett Line chart ungefär på vänstra 2/3 av sidan. X-axis = DimDate[RefDate]. Y-axis = [KPI Result To Date] och [KPI Target Reference]. Sortera stigande datum, använd Continuous axis och filtrera bort datum efter idag.
+5. Formatera resultatlinjen som solid och targetlinjen som tunn/dashed. Titel: Trend — fiscal month to date.
+
+Det ger exempelvis Delivery Leading:
+
+Aug 03     2.0
+Aug 04     2.5
+Aug 05     2.3
+Aug 06     2.8
+...
+             ─ ─ ─ Target 3
+
+men det är running monthly average, inte bara dagens värde. För LFI blir samma graf kumulativt antal closed LFI mot target 3. För NRFT och Delivery Lagging blir den löpande procentsatsen. För Incident/Amplicon blir det kumulativa antalet events. Alltså samma visual, men rätt affärsbetydelse för varje KPI.
+
+Det här är mycket bättre än att skapa sju olika trendmotorer.
+
+Gör detta och testa först med Delivery Leading och Delivery Lagging. När de båda ser rimliga ut säger du PASS.
+
+Därefter bygger vi den riktigt roliga delen: Delivery Lagging Driver Engine, där vi delar de sena >=20h-ordrarna i Testing / Compiling / Review-timmar och samtidigt visar Resampling / Retest / NC / LFI / IPT Error för exakt samma canonical orderpopulation.
+
+
+
 Ja — det är precis den sidan vi har pratat om, och jag gled nyss åt fel håll när jag började prata om trend mellan fiskalmånader.
 
 Det vi ska bygga är bättre:
