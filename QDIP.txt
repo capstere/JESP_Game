@@ -1,3 +1,46 @@
+EHS
+Leading Metric:                                                                  
+EHS Checklist ≥ 33
+Owner
+Mon. - Tues. : PQC Analyst
+Wed. - Fri. : PQC Supervisor
+
+Metric
+Lagging Metric:
+Amplicon neg + pos labb = 0
+Incident = 0
+Owner:
+PQC Manager
+
+QUALITY
+Lagging Metric:
+# of NRFT (documentation errors) Day = 0
+(Month (accumulated) ≥98%)
+Mon. - Tues. : PQC Analyst
+Wed. - Fri. : PQC Supervisor
+
+Lagging Metric:
+# Closed LFI: Day = 0
+(Month (accumulated) ≤  3)
+Mon. - Tues. : PQC Analyst
+Wed. - Fri. : PQC Supervisor
+
+DELIVERY
+Leading Metric:
+# Lots WIP ≥ 10h LT ≤ 3
+Owner:
+Mon. - Tues. : PQC Analyst
+Wed. - Fri. : PQC Supervisor
+
+Lagging Metric:
+# Lot over ≥ 20h LT = 0
+Owner
+Mon. - Tues. : PQC Analyst
+Wed. - Fri. : PQC Supervisor
+
+
+
+
 Kolumn: IPT – Test results
 Har dessa olika resultat:
 Approved
