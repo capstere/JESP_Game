@@ -11,9 +11,11 @@ export function toolDefinitions({web=true,allowCode=false}={}){
   definition('write_file','Create or replace a complete small text/code file in the in-memory workspace.',{name:string,content:string},['name','content']),
   definition('read_file','Read an existing file in the workspace.',{name:string},['name']),
   definition('inspect_file','Check JSON syntax, or report text file structure. Does NOT execute code.',{name:string},['name']),
+  definition('finish','Finish the task with a concise final answer, after completing all requested files and checks. Do not claim work without tool evidence.',{answer:string},['answer']),
   ...(allowCode?[definition('test_js','Run an explicitly authorized JavaScript assertion test, without network, DOM, imports or packages. Throw Error on failure. An optional named file is prepended to code.',{name:string,code:string},['code'])]:[])
  ];
 }
+export function reviewDefinitions(){return [definition('submit_review','Submit the final reviewed answer and remaining problems, based only on actual evidence. This does not change files.',{answer:string,issues:{type:'array',items:string}},['answer','issues'])];}
 export function decodeNativeCalls(message){
  if(!Array.isArray(message?.tool_calls)||!message.tool_calls.length)return null;
  if(message.tool_calls.length>4)throw new Error('AI:n begärde fler än fyra samtidiga verktyg; inget kördes.');
@@ -24,6 +26,10 @@ export function decodeNativeCalls(message){
   try{args=typeof raw==='string'?JSON.parse(raw):raw;if(!args||typeof args!=='object'||Array.isArray(args))throw new Error('Argumenten måste vara ett JSON-objekt.');}catch(e){args={};argumentError='Felaktiga verktygsargument: '+e.message;}
   toolCalls.push({id:call.id,type:'function',function:{name:call.function.name,arguments:typeof raw==='string'?raw:JSON.stringify(raw??{})}});
   actions.push({tool:call.function.name,args,...(argumentError?{argumentError}:{})});
+ }
+ if(actions.length===1&&!actions[0].argumentError&&['finish','submit_review'].includes(actions[0].tool)){
+  const a=actions[0];if(typeof a.args.answer!=='string'||!a.args.answer.trim())throw new Error('Avslut saknar svarstext.');
+  return {text:JSON.stringify(a.tool==='finish'?{kind:'final',answer:a.args.answer}:{answer:a.args.answer,issues:Array.isArray(a.args.issues)?a.args.issues:[]})};
  }
  return {text:JSON.stringify({kind:'actions',actions}),toolCalls,nativeContent:typeof message.content==='string'?message.content:null};
 }
