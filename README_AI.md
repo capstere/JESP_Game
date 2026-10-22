@@ -1,8 +1,10 @@
-# JESP AI 5.1 — granska, rätta, kontrollera
+# JESP AI 5.1.1 — granska, rätta, kontrollera
 
 Öppna https://capstere.github.io/JESP_Game/. Ingen Puter, användarinloggning, API-nyckel eller betalreserv har lagts till. Klassisk chatt finns kvar i `chat.html`.
 
 ## Vad som ändrats
+
+- Ett riktigt live-test upptäckte att gamla formatfel fick modellen att skriva om samma filer. Version 5.1.1 tar bort lösta formatfel, anger nästa saknade leverans i varje beslut och blockerar onödiga omskrivningar medan beställda filer saknas. Verkliga testfel och kritikerbegärda rättningar tillåts fortfarande.
 
 - Pollinations-anrop var låsta till `reasoning_effort: low`. Nu är **Auto** standard: börja med medium och begär 8192 token; vid avklippning växla till low och mindre arbetssteg i samma körning. Explicit low/medium/high kan väljas. **Live-test 2026-10-22 visade att svaret klipptes vid 1500 token trots begärda 8192.** Detta är ett observerat serverbeteende, inte ett tak vi kan häva. Högre begärd budget är ingen utlovad kapacitet. Ingen ofullständig verktygsåtgärd körs. Systemmeddelandet anger också begärd nivå; modellvikterna har inte ändrats.
 - Normalläget har 12 beslut, inklusive kritiker och rättningar. 6, 18 och 24 är också valbara. HTTP-återförsök räknas som anrop men inte som ytterligare beslut.
@@ -27,7 +29,7 @@ Roller är separata anrop till samma modell, inte oberoende experter. Uppgraderi
 ## Tester
 
 ```sh
-node --test tests/agent-unit.mjs tests/reasoning-v51.mjs tests/cap-v51.mjs
+node --test tests/agent-unit.mjs tests/reasoning-v51.mjs tests/cap-v51.mjs tests/progress-v511.mjs
 ```
 
 Regressionssviten är deterministisk och använder simulerade modeller där AI behövs. Den kontrollerar bland annat riktig filändring efter kritik, saknade leveranser, felaktiga käll-ID, citatmatchning, kontextbudget, återupptagning och anonym anropskonfiguration.

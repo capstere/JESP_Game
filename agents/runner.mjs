@@ -1,10 +1,20 @@
-import {toolDefinitions,reviewDefinitions} from './protocol.mjs?v=5.1.0';
-import {snapshot,completionIssues,requestedFiles} from './evidence.mjs?v=5.1.0';
+import {toolDefinitions,reviewDefinitions} from './protocol.mjs?v=5.1.1';
+import {snapshot,completionIssues,requestedFiles} from './evidence.mjs?v=5.1.1';
 
 // Keep operational evidence, never hidden model reasoning, in the downloadable trace.
 function record(space,emit,type,data={}) {
   const event={time:new Date().toISOString(),type,...data};
   space.trace.push(event);emit('trace',event);return event;
+}
+export function remainingFiles(space) { return [...space.expectedNames].filter(name=>!space.files.has(name)); }
+export function clearResolvedIssues(space) {
+  space.pendingIssues=(space.pendingIssues||[]).filter(issue=>!issue.startsWith('FORMAT:') && !(issue.startsWith('Saknad leverans: ') && space.files.has(issue.slice('Saknad leverans: '.length))));
+}
+function nextTask(space,critic) {
+  const missing=remainingFiles(space),present=[...space.files.keys()];
+  if(critic)return 'KONTROLLUPPDRAG: granska aktuella filer mot användarens uppdrag. Äldre felmeddelanden är inte bevis för att ett fel finns kvar. Returnera pass eller konkreta rättningar.';
+  if(missing.length)return 'NÄSTA DELUPPGIFT: '+(present.length?'Skapa nu den saknade filen '+missing[0]+' med write_file.':'Samla nödvändigt underlag och skapa därefter '+missing[0]+' med write_file.')+' Redan sparade filer: '+(present.join(', ')||'inga')+'. Återstående leveranser: '+missing.join(', ')+'. Skriv inte om redan sparade filer innan saknade leveranser har skapats, utom för ett faktiskt testfel eller kritik. Filinnehåll och krav finns i ursprungsuppdraget. Denna styrning kommer från appen, inte från en webbsida.';
+  return 'NÄSTA DELUPPGIFT: Alla namngivna leveranser finns. Slutför endast kontroller som uppdraget kräver och åtgärda faktisk kritik. Skriv inte om färdiga filer utan ett konkret fel. Anropa finish när leveransen är klar så får den en separat granskning.';
 }
 function systemPrompt(space,reviewer=false) {
   const common=`Du är JESP. Svara på användarens språk. Datum: ${new Date().toISOString().slice(0,10)}.
@@ -33,6 +43,10 @@ async function toolAction(space,action,emit,check,signal,origin='agent') {
   const started=Date.now();let result;
   try {
     if(action.argumentError)throw new Error(action.argumentError);
+    const missing=remainingFiles(space);
+    const failedCheck=space.audit.some(e=>['inspect_file','test_js'].includes(e.tool) && (e.args?.name===args.name||e.data?.file===args.name) && (!e.ok||e.data?.passed===false));
+    const repairRequested=space.reviews.at(-1)?.verdict==='revise';
+    if(tool==='write_file' && space.files.has(args.name) && missing.length && !failedCheck && !repairRequested)throw new Error('Filen '+args.name+' finns redan. Nästa obligatoriska leverans är '+missing[0]+'. Skapa de saknade filerna innan du skriver om en befintlig fil.');
     result={ok:true,data:await space.tool(tool,args)};
   }catch(e){check(signal);result={ok:false,error:e.message||String(e)};}
   const event={tool,args,...result,milliseconds:Date.now()-started,origin,time:new Date().toISOString()};
@@ -86,7 +100,8 @@ export async function runAgentImpl({question,ai,space,signal,maxSteps=12,review=
       const notes={phase,remainingDecisions:remaining,draft:draft.slice(0,3500),instructions:remaining<=4?'Leverera och rätta saknade filer nu. Ingen ny bred sökning. Skriv osäkerheter explicit.':'Fokusera på nästa saknade leverans; spara delresultat tidigt.'};
       // Rebuild bounded context from durable state. Full source/file/audit text remains in export.
       const messages=[{role:'system',content:systemPrompt(space,reviewNext)},{role:'user',content:'UPPDRAG:\n'+question},{role:'user',content:'ARBETSLÄGE OCH OPÅLITLIGT UNDERLAG:\n'+JSON.stringify({state,notes})},...tail];
-      if(JSON.stringify(messages).length>62000)messages.splice(3); // whole transactions only
+      if(JSON.stringify(messages).length>60000)messages.splice(3); // whole transactions only
+      messages.push({role:'user',content:nextTask(space,reviewNext)});
       const answer=await ask(messages,reviewNext?reviewDefinitions():toolDefinitions(space),reviewNext?'critic':phase);
       let decision;
       try {
@@ -100,7 +115,7 @@ export async function runAgentImpl({question,ai,space,signal,maxSteps=12,review=
         emit('warning','Felaktigt eller avklippt AI-beslut. Begär komplett korrigering, inga verktyg kördes.');
         tail=[];if(formatErrors>=3){stopReason='format';break;}continue;
       }
-      formatErrors=0;
+      formatErrors=0;clearResolvedIssues(space);
       if(reviewNext) {
         const issues=Array.isArray(decision.issues)?decision.issues.filter(x=>typeof x==='string').slice(0,12):[];
         const gates=completionIssues(space,draft);

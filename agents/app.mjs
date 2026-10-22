@@ -1,4 +1,4 @@
-import {AI,Workspace,runAgent,freeModels,VERSION,check} from './core.mjs?v=5.1.0';
+import {AI,Workspace,runAgent,freeModels,VERSION,check} from './core.mjs?v=5.1.1';
 import {executeJS} from './sandbox.mjs';
 import {zipFiles} from './zip.mjs';
 import {localAnswer,unloadLocal} from './local.mjs';
@@ -92,4 +92,4 @@ $('save').onclick=()=>{
 };
 const examples={research:'Sök i officiella källor vad WebAssembly är. Läs en relevant källa och skriv en kort svensk rapport med källhänvisningar. Spara rapporten som webassembly.md. Hitta inte på fakta om verktygen misslyckas.',code:'Skapa en liten JavaScript-funktion sum(a,b) i sum.js. Skriv två tester, inklusive negativa tal. Kör testerna om jag har aktiverat isolerade JavaScript-tester. Spara en README.md som är tydlig med vilka tester som faktiskt kördes.',calculate:'Räkna (125 * 8) - 175 med calculate-verktyget. Skapa resultat.json med uttrycket och resultatet. Kontrollera filens JSON-syntax med inspect_file och sammanfatta resultatet.'};
 for(const e of document.querySelectorAll('[data-example]'))e.onclick=()=>{$('prompt').value=examples[e.dataset.example];$('prompt').focus();};
-window.JESP_AGENT_BOOTED=true;window.JESP_AI_BOOTED=true;status('Version 5.1 · Fördjupat läge, leveranskontroll och kritiker → rättning är redo.');controls();
+window.JESP_AGENT_BOOTED=true;window.JESP_AI_BOOTED=true;status('Version 5.1.1 · Fördjupat läge, leveranskontroll och kritiker → rättning är redo.');controls();
