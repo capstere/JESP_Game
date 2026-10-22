@@ -1,160 +1,363 @@
-<!DOCTYPE html>
-<html lang="en">
+<!doctype html>
+<html lang="sv">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>JESP: Walking Simulator for the Emotionally Paralyzed</title>
-    <link rel="stylesheet" href="css/styles.css">
-    <meta name="description" content="Experience the meaningless wandering of JESP, a man lost in the routine of everyday life.">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Super CODEX – Multi-Provider utan nycklar</title>
+<style>
+  :root{--bg:#0b0e14;--card:#151a23;--bd:#2a3140;--tx:#e8eaf0;--mut:#8b93a5;--ac:#7c5cff;--ok:#6ee7b7;--err:#ff8b8b;--warn:#fbbf24}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--tx);font:16px/1.5 system-ui,sans-serif}
+  main{max-width:880px;margin:0 auto;padding:16px}
+  h1{font-size:1.5rem;margin:8px 0 6px;background:linear-gradient(90deg,#7c5cff,#6ee7b7);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+  .sub{font-size:.85rem;color:var(--mut);margin:0 0 16px}
+  .card{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:14px;margin-bottom:14px}
+  label{display:block;font-size:.8rem;color:var(--mut);margin:10px 0 4px}
+  textarea,select{width:100%;background:#0b0e14;color:var(--tx);border:1px solid var(--bd);border-radius:8px;padding:10px;font:inherit}
+  textarea{resize:vertical;min-height:100px}
+  button{background:var(--ac);color:#fff;border:0;border-radius:8px;padding:13px 18px;font:inherit;font-weight:600;cursor:pointer;width:100%;margin-top:12px;transition:opacity .2s}
+  button:disabled{opacity:.45;cursor:not-allowed}
+  details summary{cursor:pointer;color:var(--mut);user-select:none}
+  pre{white-space:pre-wrap;word-wrap:break-word;margin:8px 0 0;font:inherit}
+  .final{border-color:var(--ac);box-shadow:0 0 0 1px var(--ac)}
+  .err{color:var(--err)} .ok{color:var(--ok)} .warn{color:var(--warn)}
+  .small{font-size:.8rem;color:var(--mut)}
+  .m{display:flex;gap:8px;align-items:center;font-size:.9rem;padding:4px 0}
+  .tag{display:inline-block;font-size:.7rem;padding:2px 8px;border-radius:20px;background:#7c5cff22;color:#c4b5fd;border:1px solid #7c5cff44;margin-bottom:10px}
+  .badge{font-size:.65rem;padding:2px 6px;border-radius:4px;background:#2a3140;color:var(--mut);margin-left:auto}
+</style>
+<script src="https://js.puter.com/v2/"></script>
 </head>
 <body>
-    <!-- Title Screen -->
-    <div id="title-screen" class="screen">
-        <div class="title-container">
-            <h1 class="game-title">JESP</h1>
-            <h2 class="game-subtitle">Walking Simulator for the Emotionally Paralyzed</h2>
-            
-            <div class="menu-container">
-                <button id="start-game-btn" class="menu-btn">Start Game</button>
-                <button id="instructions-btn" class="menu-btn">Instructions (but why?)</button>
-                <button id="submit-score-btn" class="menu-btn">Submit Score</button>
-                <button id="leaderboard-btn" class="menu-btn">View Leaderboard</button>
-                <button id="exit-btn" class="menu-btn">Exit to Real Life (Not Recommended)</button>
-            </div>
-        </div>
-        <div class="audio-controls">
-            <button id="mute-btn" class="control-btn">🔊</button>
-        </div>
-    </div>
-    
-    <!-- Instructions Screen -->
-    <div id="instructions-screen" class="screen hidden">
-        <div class="instructions-container">
-            <h2>Instructions</h2>
-            <div class="instruction-text">
-                <p>Welcome to JESP: Walking Simulator for the Emotionally Paralyzed.</p>
-                <p>In this game, you play as JESP, a man with no direction and increasingly fewer reasons to move.</p>
-                <p>Controls: WASD or on-screen arrows. That's it.</p>
-                <p>Objective: None.</p>
-                <p>Score: Purely ornamental.</p>
-                <p>Good luck. Or don't. It won't matter.</p>
-            </div>
-            <button class="back-btn menu-btn">Return to Menu</button>
-        </div>
-    </div>
-    
-    <!-- Leaderboard Screen -->
-    <div id="leaderboard-screen" class="screen hidden">
-        <div class="leaderboard-container">
-            <h2>Top Wanderers of Meaningless Motion</h2>
-            <div id="leaderboard-entries">
-                <!-- Leaderboard entries will be inserted here -->
-            </div>
-            <button id="reset-leaderboard" class="menu-btn">Reset Leaderboard</button>
-            <button class="back-btn menu-btn">Return to Menu</button>
-        </div>
-    </div>
-    
-    <!-- Submit Score Screen -->
-    <div id="submit-score-screen" class="screen hidden">
-        <div class="submit-score-container">
-            <h2>Record Your Futile Effort</h2>
-            <p>You've walked <span id="final-score">0</span> steps to nowhere in particular.</p>
-            
-            <form id="score-form">
-                <div class="form-group">
-                    <label for="player-name">Your Name (or remain anonymous):</label>
-                    <input type="text" id="player-name" placeholder="Anonymous Wanderer">
-                </div>
-                <button type="submit" class="menu-btn">Submit to Void</button>
-            </form>
-            
-            <button class="back-btn menu-btn">Return to Menu</button>
-        </div>
-    </div>
-    
-    <!-- Game Screen -->
-    <div id="game-container" class="screen hidden">
-        <!-- Game world with clear boundaries -->
-        <div id="world">
-            <!-- Game boundary -->
-            <div id="game-boundary"></div>
-            
-            <!-- Spectators area -->
-            <div id="spectators-area">
-                <div class="window left-window">
-                    <div class="spectator"></div>
-                </div>
-                <div class="window right-window">
-                    <div class="spectator"></div>
-                </div>
-            </div>
-            
-            <!-- Interactive elements -->
-            <div id="soda-can" class="interactive-object"></div>
-            <div id="tumble-bush" class="interactive-object"></div>
-            
-            <!-- JESP character -->
-            <div id="jesp">
-                <div class="rain-cloud"></div>
-                <div class="character">
-                    <div class="head">
-                        <div class="eyes"></div>
-                        <div class="mouth"></div>
-                    </div>
-                    <div class="body"></div>
-                    <div class="arms"></div>
-                    <div class="legs"></div>
-                </div>
-                <div class="sigh-bubble hidden">*sigh*</div>
-            </div>
-            
-            <!-- Stress events container -->
-            <div id="stress-events-container"></div>
-        </div>
-        
-        <!-- Mobile controls -->
-        <div id="mobile-controls">
-            <div class="control-row">
-                <div class="spacer"></div>
-                <button id="up-btn" class="control-btn">↑</button>
-                <div class="spacer"></div>
-            </div>
-            <div class="control-row">
-                <button id="left-btn" class="control-btn">←</button>
-                <div class="spacer"></div>
-                <button id="right-btn" class="control-btn">→</button>
-            </div>
-            <div class="control-row">
-                <div class="spacer"></div>
-                <button id="down-btn" class="control-btn">↓</button>
-                <div class="spacer"></div>
-            </div>
-        </div>
-        
-        <!-- Game HUD -->
-        <div id="game-hud">
-            <div id="step-counter">
-                <p>Steps Toward Nowhere: <span id="step-count">0</span></p>
-                <p id="step-message">Are you... proud?</p>
-            </div>
-            <button id="menu-btn" class="control-btn">Menu</button>
-        </div>
-    </div>
-    
-    <!-- Audio elements -->
-    <div id="audio-container" class="hidden">
-        <!-- Audio elements will be created dynamically -->
-    </div>
-    
-    <!-- Game scripts -->
-    <script src="js/utils.js"></script>
-    <script src="js/audio.js"></script>
-    <script src="js/leaderboard.js"></script>
-    <script src="js/character.js"></script>
-    <script src="js/stressEvents.js"></script>
-    <script src="js/controls.js"></script>
-    <script src="js/menu.js"></script>
-    <script src="js/game.js"></script>
+<main>
+  <h1>Super CODEX</h1>
+  <p class="sub">Unika modeller via Puter och LLM7. KeylessAI/uncloseai används bara som absolut sista utpost (markeras tydligt). Inga API-nycklar krävs för grundfunktionen.</p>
+  <span class="tag">Puter · LLM7 · (reserv: KeylessAI · uncloseai)</span>
+
+  <details class="card" open>
+    <summary>Modeller & inställningar</summary>
+    <div id="models" class="small">Laddar modeller...</div>
+    <label>Domare (slår ihop svaren)</label>
+    <select id="judge"></select>
+    <label class="m"><input type="checkbox" id="useAgent" checked> Agent-läge (tillåt webbsökning)</label>
+  </details>
+
+  <div class="card">
+    <label>Din uppgift / fråga</label>
+    <textarea id="q" placeholder="T.ex. 'Bygg en React-hook för debounce' eller 'Förklara kvantdatorer'..."></textarea>
+    <button id="go">Kör Super CODEX</button>
+    <div id="prog" class="small" style="margin-top:8px"></div>
+  </div>
+  <div id="out"></div>
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+// ============================================================
+// KONFIGURATION
+// ============================================================
+
+// Puter – premiummodeller (verifierade modell-ID:n)
+const PUTER_MODELS = [
+  "openai/gpt-5.5",
+  "anthropic/claude-opus-5-5",
+  "openai/gpt-5.5-pro",
+  "anthropic/claude-sonnet-5",
+  "openai/gpt-5.3-codex",
+  "google/gemini-3.1-pro-preview"
+];
+
+// LLM7 – gratis, flera modeller (dynamiskt hämtade)
+const LLM7_BASE = "https://api.llm7.io/v1";
+const LLM7_FALLBACK_MODELS = ["gpt-4o-mini", "gpt-oss-20b", "deepseek-r1"];
+
+// Sista utpost (anonym standardmodell – samma svar för alla val)
+const UNCLOSE_BASE = "https://hermes.ai.unturf.com/v1";
+const KEYLESS_BASE = "https://keylessai.thryx.workers.dev/v1";
+
+// Pollinations nya endpoint (kan kräva nyckel; används bara om allt annat fallerar)
+const POLL_BASE = "https://gen.pollinations.ai/v1/chat/completions";
+
+let MODELS = [];          // Modeller som visas i listan (Puter + LLM7)
+let LLM7_MODELS = [];      // Modeller som LLM7 faktiskt erbjuder
+let USE_AGENT = true;
+let lastCall = 0;
+
+// ============================================================
+// MODELLISTA
+// ============================================================
+async function loadModels() {
+  // 1. Hämta LLM7:s aktuella gratismodeller
+  try {
+    const r = await fetch(LLM7_BASE + "/models");
+    if (r.ok) {
+      const j = await r.json();
+      LLM7_MODELS = (j.data || [])
+        .filter(m => m.tier === "turbo" || !m.tier) // turbo = gratis
+        .map(m => m.id)
+        .filter(Boolean);
+    }
+  } catch {}
+  if (!LLM7_MODELS.length) LLM7_MODELS = [...LLM7_FALLBACK_MODELS];
+
+  // 2. Bygg den synliga modellistan: Puter först, sedan LLM7
+  MODELS = [
+    ...PUTER_MODELS.map(name => ({ name, pre: true, provider: "Puter" })),
+    ...LLM7_MODELS.map(name => ({ name, pre: false, provider: "LLM7" }))
+  ];
+
+  const box = $("models"); box.innerHTML = "";
+  MODELS.forEach((m, i) => {
+    const row = document.createElement("label"); row.className = "m";
+    const cb = document.createElement("input"); cb.type = "checkbox";
+    cb.checked = m.pre; cb.dataset.i = i;
+    const sp = document.createElement("span"); sp.textContent = m.name;
+    const badge = document.createElement("span");
+    badge.className = "badge"; badge.textContent = m.provider;
+    row.append(cb, sp, badge); box.append(row);
+  });
+
+  const j = $("judge"); j.innerHTML = "";
+  MODELS.forEach(m => {
+    const o = document.createElement("option"); o.value = m.name; o.textContent = m.name; j.append(o);
+  });
+  j.value = PUTER_MODELS[0] || MODELS[0]?.name || "";
+  $("useAgent").onchange = e => USE_AGENT = e.target.checked;
+}
+
+// ============================================================
+// WEBBSÖKNING
+// ============================================================
+async function webSearch(query) {
+  try {
+    const r = await fetch("https://api.duckduckgo.com/?q=" + encodeURIComponent(query) + "&format=json&no_html=1");
+    if (!r.ok) return "HTTP " + r.status;
+    const j = await r.json();
+    const parts = [];
+    if (j.AbstractText) parts.push(j.AbstractText);
+    if (j.AbstractURL) parts.push("Källa: " + j.AbstractURL);
+    if (j.RelatedTopics?.length) parts.push("Relaterat: " + j.RelatedTopics.slice(0,3).map(t=>t.Text).filter(Boolean).join(" | "));
+    return parts.length ? parts.join("\n") : "Inga direkta träffar.";
+  } catch (e) { return "Sökfel: " + (e.message || e); }
+}
+
+// ============================================================
+// LEVERANTÖRSANROP
+// ============================================================
+async function callLLM(model, messages, opts = {}) {
+  const temp = opts.temperature ?? 0.7;
+
+  // 1. Puter (endast för Puter-modeller)
+  if (PUTER_MODELS.includes(model) && typeof puter !== "undefined") {
+    try {
+      const resp = await puter.ai.chat(messages, { model, temperature: temp });
+      const text = typeof resp === "string" ? resp : (resp?.message?.content ?? String(resp));
+      if (text?.trim()) return { text, provider: "Puter" };
+    } catch (e) { /* faller vidare */ }
+  }
+
+  // 2. LLM7 (om modellen finns där)
+  if (LLM7_MODELS.includes(model)) {
+    try {
+      const r = await fetch(LLM7_BASE + "/chat/completions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": "Bearer unused"
+        },
+        body: JSON.stringify({ model, messages, temperature: temp })
+      });
+      if (r.ok) {
+        const data = await r.json();
+        const txt = data.choices?.[0]?.message?.content;
+        if (txt?.trim()) return { text: txt, provider: "LLM7" };
+      }
+    } catch {}
+  }
+
+  // 3. Sista utpost: uncloseai (en enda anonym modell)
+  try {
+    const r = await fetch(UNCLOSE_BASE + "/chat/completions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: "turboderp/Qwen3.8-27B-exl3", // fungerande modell-ID
+        messages,
+        temperature: temp,
+        max_tokens: 1200
+      })
+    });
+    if (r.ok) {
+      const data = await r.json();
+      const txt = data.choices?.[0]?.message?.content;
+      if (txt?.trim()) return { text: txt, provider: "uncloseai (reserv)" };
+    }
+  } catch {}
+
+  // 4. Sista utpost: KeylessAI (anonym standardmodell)
+  try {
+    const r = await fetch(KEYLESS_BASE + "/chat/completions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ model: "openai-fast", messages, temperature: temp })
+    });
+    if (r.ok) {
+      const data = await r.json();
+      const txt = data.choices?.[0]?.message?.content;
+      if (txt?.trim()) return { text: txt, provider: "KeylessAI (reserv)" };
+    }
+  } catch {}
+
+  // 5. Absolut sista: Pollinations (kan kräva nyckel – testas tyst)
+  try {
+    const r = await fetch(POLL_BASE, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ model: "openai", messages, temperature: temp })
+    });
+    if (r.ok) {
+      const data = await r.json();
+      const txt = data.choices?.[0]?.message?.content;
+      if (txt?.trim()) return { text: txt, provider: "Pollinations (reserv)" };
+    }
+  } catch {}
+
+  throw new Error("Ingen leverantör svarade. Kontrollera internetanslutningen.");
+}
+
+// ============================================================
+// KÖ
+// ============================================================
+async function ask(model, messages, onWait) {
+  const MAX = 2;
+  for (let attempt = 0; attempt < MAX; attempt++) {
+    const isPremium = PUTER_MODELS.includes(model) || LLM7_MODELS.includes(model);
+    const baseGap = isPremium ? 1000 : 15000;
+    const gap = baseGap - (Date.now() - lastCall);
+    if (gap > 0) { onWait?.(Math.ceil(gap/1000)); await sleep(gap); }
+    lastCall = Date.now();
+
+    try {
+      return await callLLM(model, messages);
+    } catch (e) {
+      if (attempt === MAX - 1) throw e;
+      await sleep(5000);
+    }
+  }
+}
+
+// ============================================================
+// AGENT-LOOP
+// ============================================================
+async function runAgent(model, userQuery, onProgress) {
+  const system = `Du är en noggrann AI-assistent med verktyget web_search(query).
+Använd verktyget vid behov. Skriv exakt "ACTION: web_search(\"fråga\")" för att söka.
+Ge annars ett välstrukturerat slutsvar. Svara på användarens språk.`;
+
+  const messages = [
+    { role: "system", content: system },
+    { role: "user", content: userQuery }
+  ];
+
+  for (let step = 0; step < 4; step++) {
+    onProgress?.(`Tänker (steg ${step+1})...`);
+    const { text, provider } = await ask(model, messages, s => onProgress?.(`väntar ${s}s...`));
+    onProgress?.(`Svar från ${provider}`);
+
+    const m = text.match(/ACTION:\s*web_search\(["']?(.+?)["']?\)/i);
+    if (m && USE_AGENT) {
+      const query = m[1].trim();
+      onProgress?.(`Söker: ${query}`);
+      const result = await webSearch(query);
+      messages.push({ role: "assistant", content: text });
+      messages.push({ role: "user", content: `Verktygsresultat för "${query}":\n${result}\n\nFortsätt och ge slutsvar.` });
+      continue;
+    }
+    return { text, provider };
+  }
+  return { text: "Agenten nådde max antal steg.", provider: "agent" };
+}
+
+// ============================================================
+// HUVUDFLÖDE
+// ============================================================
+$("go").onclick = async () => {
+  const q = $("q").value.trim();
+  if (!q) return;
+
+  const btn = $("go"); btn.disabled = true;
+  $("out").innerHTML = ""; $("prog").textContent = "";
+
+  const chosen = [...document.querySelectorAll("#models input:checked")]
+    .map(c => MODELS[+c.dataset.i].name);
+  if (!chosen.length) { alert("Välj minst en modell."); btn.disabled = false; return; }
+
+  const fin = document.createElement("div"); fin.className = "card final";
+  const fh = document.createElement("strong"); fh.textContent = "Sammanslaget svar";
+  const fp = document.createElement("pre"); fp.textContent = "Samlar in svar...";
+  fin.append(fh, fp); $("out").append(fin);
+
+  const results = [];
+
+  for (let i = 0; i < chosen.length; i++) {
+    const name = chosen[i];
+    const w = document.createElement("details"); w.className = "card";
+    const s = document.createElement("summary"); s.textContent = name;
+    const p = document.createElement("pre"); p.textContent = "Väntar...";
+    w.append(s, p); $("out").append(w);
+
+    $("prog").textContent = `Frågar ${name} (${i+1}/${chosen.length})...`;
+
+    try {
+      let answer, provider;
+      if (USE_AGENT) {
+        const res = await runAgent(name, q, msg => $("prog").textContent = `${name}: ${msg}`);
+        answer = res.text; provider = res.provider;
+      } else {
+        const res = await ask(name, [{ role: "user", content: q }], s => $("prog").textContent = `${name}: väntar ${s}s...`);
+        answer = res.text; provider = res.provider;
+      }
+
+      p.textContent = answer;
+      p.className = provider.includes("reserv") ? "warn" : "ok";
+      s.textContent = `✓ ${name} (via ${provider})`;
+      results.push({ name, answer, provider });
+    } catch (e) {
+      p.textContent = "Fel: " + e.message; p.className = "err";
+      s.textContent = "✗ " + name;
+    }
+  }
+
+  if (!results.length) {
+    fp.className = "err"; fp.textContent = "Inga modeller svarade. Försök igen.";
+    $("prog").textContent = ""; btn.disabled = false; return;
+  }
+  if (results.length === 1) {
+    fp.textContent = results[0].answer;
+    $("prog").textContent = ""; btn.disabled = false; return;
+  }
+
+  // Domare
+  $("prog").textContent = "Domaren väger ihop svaren...";
+  const judgePrompt = `Du är expertgranskare. Jämför svaren, notera enighet/oenighet, rätta fel och skriv ett enda bästa slutsvar på användarens språk.\n\nFRÅGA:\n${q}\n\n` +
+    results.map((x, i) => `--- SVAR ${i+1} (${x.name} via ${x.provider}) ---\n${x.answer}`).join("\n\n");
+
+  const order = [$("judge").value, ...results.map(x => x.name)].filter((v,i,a) => a.indexOf(v) === i);
+  let done = false;
+  for (const m of order) {
+    try {
+      const res = await ask(m, [{ role: "user", content: judgePrompt }], s => $("prog").textContent = `Domare ${m}: väntar ${s}s...`);
+      fp.textContent = res.text; done = true; break;
+    } catch { fp.textContent = `Domaren (${m}) misslyckades, provar nästa...`; }
+  }
+  if (!done) { fp.className = "err"; fp.textContent = "Ingen domare svarade. Se enskilda svar ovan."; }
+
+  $("prog").textContent = ""; btn.disabled = false;
+};
+
+loadModels();
+</script>
 </body>
 </html>
