@@ -3,7 +3,8 @@
   "supersedes": "Puter-based v3 mocked results",
   "realComponentTestRun": "https://github.com/capstere/JESP_Game/actions/runs/39833414852",
   "realComponentResults": {"anonymousPollinationsGET": "12", "localQwenInChromium": "12", "wllamaVersion": "3.8.1"},
-  "completeAppResults": "See Real AI browser test workflow logs and artifacts for the exact tested commit. A test of a component is not a test of the full app.",
-  "mockedUITests": 7,
+  "firstRealBrowserPOST": {"run": "https://github.com/capstere/JESP_Game/actions/runs/39834830863", "answer": "12", "wholeRunPassed": false, "nextRequestFailed": "HTTP 402 FREE_LIMIT: one reply per 30 seconds per IP; a cancellable interval was subsequently implemented"},
+  "completeAppResults": "See Real AI browser test workflow logs and artifacts for the exact tested commit. Individual successful requests do not establish a passed full test or guaranteed availability.",
+  "mockedUITests": 9,
   "mockedUITestsAreNotLiveAIProof": true
 }

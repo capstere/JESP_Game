@@ -4,7 +4,9 @@
 
 ## Online-läge är förvalt
 
-Appen använder Pollinations publika text-API. Ett anonymt anrop skickas per klick, med `credentials: omit`. Inga tokens läggs in i källkoden. Ingen betalreserv, CORS-proxy, kontoregistrering eller kvotkringgång används. Vid trafikgränser eller åtkomstfel visas felet; inget köps och ingen lokal modell laddas ner automatiskt.
+Appen använder Pollinations publika text-API. Ett anonymt anrop skickas per klick efter eventuell väntetid, med `credentials: omit`. Inga tokens läggs in i källkoden. Ingen betalreserv, CORS-proxy, kontoregistrering eller kvotkringgång används. Vid trafikgränser eller åtkomstfel visas felet; inget köps och ingen lokal modell laddas ner automatiskt.
+
+Vid live-testet svarade tjänsten att gratisgränsen är ett svar per 30 sekunder och IP-adress. Appen väntar före följande frågor, hanterar även HTTP 402 med `FREE_LIMIT`, respekterar `Retry-After` och erbjuder ingen betalväg. Delade nätverk kan dela samma IP-gräns.
 
 Detta är gratis åtkomst som tjänsten erbjuder vid testtillfället, inte en garanti om obegränsad eller framtida tillgång. Frågor skickas till Pollinations; skicka inte känsligt innehåll. Varje fråga är fristående. Appen använder inga analysverktyg och sparar inte frågor/svar. Ingen webbsökning eller automatisk körning av genererad kod ingår.
 
@@ -18,9 +20,11 @@ Frågetexten skickas inte till någon AI-server i lokalt läge. Modellen är lit
 
 Det första diagnostiska testet på GitHub Actions lyckades med ett riktigt anonymt Pollinations-svar och faktisk lokal modellinferens i Chromium: https://github.com/capstere/JESP_Game/actions/runs/39833414852 . Det testet verifierade byggstenarna, inte hela v4-gränssnittet.
 
+Ett riktigt anonymt POST-anrop från appen i Chromium returnerade också `12`: https://github.com/capstere/JESP_Game/actions/runs/39834830863 . Den körningen som helhet misslyckades på nästa fråga på grund av tjänstens 30-sekundersgräns. Därefter lades en avbrytbar väntetid och hantering av `FREE_LIMIT` till. Resultatet från en enskild lyckad fråga ska inte förväxlas med ett helt godkänt testflöde.
+
 `tests/live-browser.mjs` testar den faktiska appen i Chromium och WebKit. AI-anrop mockas aldrig där. Innan publicering iscensätts endast repoets HTML/JS under sidans origin. Efter lyckad Pages-publicering kör arbetsflödet samma online-test mot den riktiga hemsidan utan denna fil-iscensättning. Det kontrollerar en testfråga, en slumpad additionsfråga, avsaknad av autentisering, mobilbredd och, i förpubliceringstestet, verklig lokal modellgenerering.
 
-`tests/ui-tests.py` testar felkoder, avbrytning, säker textrendering och mobilvy med simulerade svar. De testerna är inte bevis på tjänstens drifttid. Resultat från riktiga körningar och skärmbilder finns i arbetsflödets logg och artefakter. Ett grönt test är en observation vid testtillfället, inte en drifttidsgaranti.
+`tests/ui-tests.py` testar felkoder, avbrytning, säker textrendering, väntetid och mobilvy med simulerade svar. Nio sådana lokala tester passerade, men de är inte bevis på tjänstens drifttid. Resultat från riktiga körningar och skärmbilder finns i arbetsflödets logg och artefakter. Ett grönt test är en observation vid testtillfället, inte en drifttidsgaranti.
 
 ## Filer
 
