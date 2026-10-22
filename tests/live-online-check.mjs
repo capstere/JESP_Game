@@ -21,7 +21,10 @@ async function answer() {
 try {
  await page.goto(url,{waitUntil:'domcontentloaded'});
  await page.waitForFunction(()=>window.JESP_AI_BOOTED,{}, {timeout:30000});
- if(!/Version 4/.test(await page.locator('.eyebrow').innerText())) throw new Error('Published version is not v4');
+ // textContent is not transformed to uppercase by the eyebrow's CSS.
+ const version=await page.locator('.eyebrow').textContent();
+ console.log('PUBLISHED_VERSION',version);
+ if(!/Version 4/i.test(version)) throw new Error('Published version is not v4');
  await page.locator('details.card summary').click();
  await page.click('#test');
  const first=await answer();
