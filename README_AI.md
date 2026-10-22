@@ -1,41 +1,45 @@
-# JESP AI v4 — utan Puter eller inloggning
+# JESP AI v5 – verktygsanvändande agenter utan konto
 
-Öppna https://capstere.github.io/JESP_Game/?v=4.0, skriv din fråga och klicka på **Fråga AI gratis**. Ingen egen server, API-nyckel eller inloggning används.
+Öppna https://capstere.github.io/JESP_Game/, skriv ett uppdrag och klicka **Starta agenten gratis**. V4-chatten är bevarad på `chat.html`; dess fungerande `ai.js` är oförändrad.
 
-## Verifierat på den publicerade hemsidan
+## Vad agenten faktiskt gör
 
-Den 22 oktober 2026 kl. 19:05 UTC klarade det publicerade online-läget ett verkligt Chromium-test. Varken AI-svar, HTML eller JavaScript ersattes av testdata.
+Den valda modellen kan planera, välja verktyg, läsa verkliga verktygsresultat och välja nästa steg. Verktyg körs i en begränsad loop, inte som dekorativa animationer. En separat granskningsroll får sedan uppdraget, utkastet, filerna och verktygsbevisen. Roller använder samma valda modell – detta är inte flera oberoende expertmodeller.
 
-- Testknappen: `7 + 5` gav `12`.
-- En vanlig fråga i frågefältet: `31 + 24` gav `55`.
-- Båda API-anropen gav HTTP 200 utan autentisering, cookies eller API-nycklar.
-- Den automatiska väntetiden mellan anrop respekterade tjänstens gratisintervall.
-- Mobilbredd 390 px hade ingen horisontell överströmning.
+Verktygen är webbsökning, läsning av kända publika källor, räknare utan eval, textbaserad filarbetsyta, filinspektion och opt-in JavaScript-tester. Resultat, källor och filversioner visas i loggen. Arbetsytan kan sparas som ZIP med filer, uppdrag och verktygslogg.
 
-**Godkänd körning:** https://github.com/capstere/JESP_Game/actions/runs/39836828551
+Agenten kan inte skicka mejl, logga in på andra webbplatser, skriva till GitHub, köpa tjänster eller styra din dator. Skapad HTML/kod visas som inert text, inte körbart innehåll.
 
-Råresultatet finns i `tests/published-evidence.json`. En skärmbild och resultatfil finns också som artefakt i körningen. Detta bevisar fungerande online-anrop vid testtillfället, inte framtida drifttid, obegränsad tillgång eller korrekthet i alla AI-svar.
+## Anslutningar och gratisbegränsningar
 
-## Online-läge är förvalt
+**Pollinations** är standard: den fungerande anonyma vägen `https://text.pollinations.ai/openai`, alias `openai`. Det verkliga modellnamnet i svaret visas; ingen fast större modell utlovas. Ingen Authorization-header, cookie eller API-nyckel skickas. Minst 31 sekunders mellanrum används efter varje svar, plus leverantörens Retry-After vid kvotfel. Högst ett automatiskt återförsök för trafikgräns görs. En agent gör flera anrop och tar därför längre tid än ett chattmeddelande. Samtliga väntelägen kan avbrytas. Ingen betalreserv finns.
 
-Appen använder Pollinations publika text-API. Ett anonymt anrop skickas per klick efter eventuell väntetid, med `credentials: omit`. Inga tokens läggs in i källkoden. Ingen betalreserv, CORS-proxy, kontoregistrering eller kvotkringgång används. Vid trafikgränser eller åtkomstfel visas felet; inget köps och ingen lokal modell laddas ner automatiskt.
+**Sökning:** Parallel MCP, Exa MCP, sedan Wikipedia som uttryckligen begränsad reserv. Publika sök-/läsverktyg används; inga betalda forskningsagentfunktioner används. Källadresser måste vara publika HTTPS-adresser. Sidläsning begränsas till URL:er som användaren gav eller som verktygen faktiskt returnerade. Det går inte att läsa godtyckliga interna/lokala adresser.
 
-Vid live-testet angav tjänsten gratisgränsen **ett svar per 30 sekunder och IP-adress**. Appen väntar före följande frågor, hanterar HTTP 402 med `FREE_LIMIT`, respekterar `Retry-After` och erbjuder ingen betalväg. Delade nätverk kan dela samma IP-gräns. Tjänsten kan ändra villkor eller bli otillgänglig.
+**Kilo** är inte aktiverat som standard: kataloghämtning misslyckades i det verkliga webbläsarförtestet från GitHub Pages. Knappen Kontrollera Kilo gratis testar åtkomsten i din webbläsare. Endast katalogmodeller märkta `:free` eller `kilo-auto/free` med verifierat nollpris tillåts. Katalogen kontrolleras inför varje anrop. Detta är ett klientfilter, inte ett löfte om leverantörens framtida priser eller tillgänglighet. Inga betalda eller okända modeller väljs.
 
-Frågor skickas till Pollinations; skicka inte känsligt innehåll. Varje fråga är fristående. Appen använder inga analysverktyg och sparar inte frågor/svar. Ingen webbsökning eller automatisk körning av genererad kod ingår.
+**Lokal Qwen3 1.7B:** separat experimentellt alternativ via WebLLM 0.2.85 och WebGPU. Nedladdningen kräver aktivt godkännande; räkna med ungefär 1–2 GB och flera GB ledigt minne. Enheten kan sakna stöd, och denna mindre modell kan ha svårt att följa agentprotokollet. Lokal generering har inte verifierats på användarens hårdvara. Stäng av webbverktyg för att inte skicka sökfrågor externt. Den tidigare lilla CPU-modellen finns kvar i klassisk chatt.
 
-## Frivilligt lokalt läge
+Gratis betyder inte obegränsad tillgång eller garanterad upptid. Vid nekad åtkomst visas felet. Appen öppnar ingen inloggning eller betalning och förutsätter inga krediter.
 
-Välj lokalt läge i inställningarna och klicka för att hämta modellen. Qwen2.5-0.5B-Instruct Q4_K_M hämtas från Hugging Face (cirka 400 MB) och körs på enheten via `@wllama/wllama@3.8.1`. Körmotorn hämtas från jsDelivr. CPU-körning använder en tråd och kräver inte WebGPU eller särskilda COOP/COEP-rubriker från GitHub Pages.
+## Säkerhet och sekretess
 
-Frågetexten skickas inte till någon AI-server i lokalt läge. Modellen är liten, kan vara långsam och har lägre kapacitet än stora molnmodeller. Tillräckligt minne, modern WebAssembly och lokal webbläsarlagring krävs. Nedladdning, datatrafik och batteriförbrukning tillkommer; ingen avgift per AI-anrop. Modellen mellanlagras av webbläsaren; knappen Radera hämtad modell raderar modellcachen.
+Online skickas uppdrag, relevanta verktygsresultat och filinnehåll till den valda AI-leverantören. Sökfrågor och URL:er skickas till sökleverantörerna. Deras behandling, lagring och villkor ligger utanför denna apps kontroll. Skriv inte hemligheter eller känsliga personuppgifter.
 
-Den lokala modellens byggstenar har gett ett verkligt svar `12` i Chromium i körning https://github.com/capstere/JESP_Game/actions/runs/39833414852 . Detta är separat från verifieringen av hela det publicerade online-flödet; det är inte ett fullständigt kompatibilitetstest av den lokala funktionen på alla enheter.
+Appens arbetsyta finns i flikens minne. Den sparar inte uppdrag i localStorage. En anonym väntetidsstämpel sparas för att respektera AI-kvoten, och en lokalt vald modell kan cachas av körmotorn. Inga analysverktyg eller egna serverloggar används av appen.
 
-## Tester
+Webbinnehåll markeras som opålitliga data, aldrig instruktioner. Verktygsnamn och argument valideras separat. Filer begränsas till 12 filer, 100 kB per fil och 500 kB totalt. Modellbeslut begränsas till 3, 5 eller 8 steg plus valfri granskning. Filnamn får inte innehålla sökvägar.
 
-- `tests/live-online-check.mjs`: publicerad hemsida, verkliga anonyma API-svar, två frågor, tidsintervall, autentiseringsfrihet och mobilbredd. Arbetsflödet **Published anonymous AI check** körs efter lyckad Pages-publicering och kan även startas manuellt.
-- `tests/live-browser.mjs`: utökat, manuellt startbart test i Chromium och WebKit, inklusive den lokala modellen vid förpubliceringstest. AI-anrop mockas inte. Testmiljön kräver större webbläsarberoenden.
-- `tests/ui-tests.py`: nio passerade lokala fel- och UI-tester med simulerade svar. De testar bland annat felkoder, avbrytning, HTML-säker textvisning och väntetid; de är inte bevis på en AI-tjänsts drifttid.
+JavaScript-tester är avstängda tills användaren uttryckligen aktiverar dem. De körs i en separat Worker inuti en opaque-origin sandboxad iframe med CSP som blockerar nätverk, föräldradokument och beständig lagring. Testet avbryts efter fyra sekunder. Importer, npm-paket och DOM är inte tillgängliga. Godkända testassertioner bevisar bara dessa testfall, inte att all genererad kod är säker eller korrekt.
 
-`AI_TEST_RESULTS.json` skiljer på dessa testnivåer. Den tidigare Puter-integrationen och dess modellprisfilter används inte. Befintliga kataloger med övriga tillgångar har bevarats.
+## Tester – skilj på nivåerna
+
+`node --test tests/agent-unit.mjs` kör 42 enhetstester utan verklig AI. Lokala browser-fixtures har även kontrollerat mobilvisning, injektionssäker textvisning, avbrytning och sandboxens nätverks-/lagringsspärrar. Dessa är inte bevis på AI-tjänstens tillgänglighet.
+
+GitHub Actions **JESP agent checks** kör både uttryckligt simulerade regressionstester och ett separat riktigt agentuppdrag. Det riktiga uppdraget söker WebAssembly-dokumentation, läser en källa, räknar `(125*8)-175`, skapar `resultat.json`, kontrollerar JSON-syntax och låter granskningsrollen avsluta. Inga AI- eller söksvar simuleras i livekontrollen. HTTP-status, verkligt modellnamn, anropstider, skapad fil, skärmbilder och ZIP sparas som artefakter. Efter en lyckad Pages-publicering körs livekontrollen mot själva publicerade sidan; på utvecklingsgrenen körs den mot en lokalt serverad kopia.
+
+Aktuell körningsstatus finns under repositoryts Actions-flik. En lyckad publicering bevisar inte i sig att agentuppdraget lyckades. Lokal WebGPU-inferens ingår inte i det automatiska live-testet.
+
+## Lokalt utvecklingsläge
+
+Kör `python3 -m http.server 8123` i repositoryts rot och öppna `http://localhost:8123/`. Ingen byggkedja krävs för appen. För tester används Node och Playwright; se workflowfilen. Appen måste serveras över HTTP/HTTPS, inte öppnas som file://.
