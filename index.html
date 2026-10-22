@@ -3,12 +3,12 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Super CODEX – Multi-Provider utan nycklar</title>
+<title>Super CODEX – Gratis Multi-Provider</title>
 <style>
   :root{--bg:#0b0e14;--card:#151a23;--bd:#2a3140;--tx:#e8eaf0;--mut:#8b93a5;--ac:#7c5cff;--ok:#6ee7b7;--err:#ff8b8b;--warn:#fbbf24}
   *{box-sizing:border-box}
   body{margin:0;background:var(--bg);color:var(--tx);font:16px/1.5 system-ui,sans-serif}
-  main{max-width:880px;margin:0 auto;padding:16px}
+  main{max-width:900px;margin:0 auto;padding:16px}
   h1{font-size:1.5rem;margin:8px 0 6px;background:linear-gradient(90deg,#7c5cff,#6ee7b7);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
   .sub{font-size:.85rem;color:var(--mut);margin:0 0 16px}
   .card{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:14px;margin-bottom:14px}
@@ -26,13 +26,12 @@
   .tag{display:inline-block;font-size:.7rem;padding:2px 8px;border-radius:20px;background:#7c5cff22;color:#c4b5fd;border:1px solid #7c5cff44;margin-bottom:10px}
   .badge{font-size:.65rem;padding:2px 6px;border-radius:4px;background:#2a3140;color:var(--mut);margin-left:auto}
 </style>
-<script src="https://js.puter.com/v2/"></script>
 </head>
 <body>
 <main>
-  <h1>Super CODEX</h1>
-  <p class="sub">Unika modeller via Puter och LLM7. KeylessAI/uncloseai används bara som absolut sista utpost (markeras tydligt). Inga API-nycklar krävs för grundfunktionen.</p>
-  <span class="tag">Puter · LLM7 · (reserv: KeylessAI · uncloseai)</span>
+  <h1>Super CODEX – Gratis Multi-Provider</h1>
+  <p class="sub">Sex keyless- och gratisvägar i en kedja. Ingen API-nyckel krävs för grundfunktionen. uncloseai → Pollinations → KeylessAI → LLM7 → GitHub Models → Groq.</p>
+  <span class="tag">uncloseai GitHub Models · Groq</span>
 
   <details class="card" open>
     <summary>Modeller & inställningar</summary>
@@ -40,6 +39,13 @@
     <label>Domare (slår ihop svaren)</label>
     <select id="judge"></select>
     <label class="m"><input type="checkbox" id="useAgent" checked> Agent-läge (tillåt webbsökning)</label>
+    <label class="m"><input type="checkbox" id="useGitHub"> Använd GitHub Models (kräver gratis token, se nedan)</label>
+    <label class="m"><input type="checkbox" id="useGroq"> Använd Groq (kräver gratis nyckel, se nedan)</label>
+    <div class="small" style="margin-top:8px">
+      GitHub-token: skapa på github.com/settings/tokens med <code>models:read</code>.<br>
+      Groq-nyckel: gratis på console.groq.com/keys.<br>
+      Klistra in i koden under <code>GITHUB_TOKEN</code> / <code>GROQ_KEY</code> om du vill använda dem.
+    </div>
   </details>
 
   <div class="card">
@@ -56,57 +62,44 @@ const $ = id => document.getElementById(id);
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 // ============================================================
-// KONFIGURATION
+// KONFIGURATION – fyll i valfria tokens om du vill använda GitHub/Groq
 // ============================================================
+const GITHUB_TOKEN = ""; // lämna tom för att hoppa över GitHub Models
+const GROQ_KEY = "";     // lämna tom för att hoppa över Groq
 
-// Puter – premiummodeller (verifierade modell-ID:n)
-const PUTER_MODELS = [
-  "openai/gpt-5.5",
-  "anthropic/claude-opus-5-5",
-  "openai/gpt-5.5-pro",
-  "anthropic/claude-sonnet-5",
-  "openai/gpt-5.3-codex",
-  "google/gemini-3.1-pro-preview"
+// Keyless-endpoints (ingen nyckel krävs)
+const UNCLOSE_BASE = "https://hermes.ai.unturf.com/v1";
+const POLL_BASE = "https://text.pollinations.ai/openai";
+const KEYLESS_BASE = "https://keylessai.thryx.workers.dev/v1";
+const LLM7_BASE = "https://api.llm7.io/v1";
+
+// Modeller som listas i UI:t (keyless först)
+const KEYLESS_MODELS = [
+  { name: "uncloseai/qwen", provider: "uncloseai", pre: true },
+  { name: "pollinations/openai", provider: "Pollinations", pre: true },
+  { name: "keylessai/openai-fast", provider: "KeylessAI", pre: false },
+  { name: "llm7/gpt-4o-mini", provider: "LLM7", pre: false }
 ];
 
-// LLM7 – gratis, flera modeller (dynamiskt hämtade)
-const LLM7_BASE = "https://api.llm7.io/v1";
-const LLM7_FALLBACK_MODELS = ["gpt-4o-mini", "gpt-oss-20b", "deepseek-r1"];
-
-// Sista utpost (anonym standardmodell – samma svar för alla val)
-const UNCLOSE_BASE = "https://hermes.ai.unturf.com/v1";
-const KEYLESS_BASE = "https://keylessai.thryx.workers.dev/v1";
-
-// Pollinations nya endpoint (kan kräva nyckel; används bara om allt annat fallerar)
-const POLL_BASE = "https://gen.pollinations.ai/v1/chat/completions";
-
-let MODELS = [];          // Modeller som visas i listan (Puter + LLM7)
-let LLM7_MODELS = [];      // Modeller som LLM7 faktiskt erbjuder
+let MODELS = [];
 let USE_AGENT = true;
+let USE_GITHUB = false;
+let USE_GROQ = false;
 let lastCall = 0;
 
 // ============================================================
 // MODELLISTA
 // ============================================================
-async function loadModels() {
-  // 1. Hämta LLM7:s aktuella gratismodeller
-  try {
-    const r = await fetch(LLM7_BASE + "/models");
-    if (r.ok) {
-      const j = await r.json();
-      LLM7_MODELS = (j.data || [])
-        .filter(m => m.tier === "turbo" || !m.tier) // turbo = gratis
-        .map(m => m.id)
-        .filter(Boolean);
-    }
-  } catch {}
-  if (!LLM7_MODELS.length) LLM7_MODELS = [...LLM7_FALLBACK_MODELS];
-
-  // 2. Bygg den synliga modellistan: Puter först, sedan LLM7
-  MODELS = [
-    ...PUTER_MODELS.map(name => ({ name, pre: true, provider: "Puter" })),
-    ...LLM7_MODELS.map(name => ({ name, pre: false, provider: "LLM7" }))
-  ];
+function buildModelList() {
+  MODELS = [...KEYLESS_MODELS];
+  if (GITHUB_TOKEN) {
+    MODELS.push({ name: "github/gpt-4o-mini", provider: "GitHub Models", pre: false });
+    MODELS.push({ name: "github/llama-3.3-70b", provider: "GitHub Models", pre: false });
+  }
+  if (GROQ_KEY) {
+    MODELS.push({ name: "groq/llama-3.3-70b", provider: "Groq", pre: false });
+    MODELS.push({ name: "groq/llama-3.1-8b", provider: "Groq", pre: false });
+  }
 
   const box = $("models"); box.innerHTML = "";
   MODELS.forEach((m, i) => {
@@ -123,12 +116,19 @@ async function loadModels() {
   MODELS.forEach(m => {
     const o = document.createElement("option"); o.value = m.name; o.textContent = m.name; j.append(o);
   });
-  j.value = PUTER_MODELS[0] || MODELS[0]?.name || "";
+  j.value = MODELS[0]?.name || "";
   $("useAgent").onchange = e => USE_AGENT = e.target.checked;
+  $("useGitHub").checked = !!GITHUB_TOKEN;
+  $("useGitHub").disabled = !GITHUB_TOKEN;
+  $("useGitHub").onchange = e => USE_GITHUB = e.target.checked;
+  $("useGroq").checked = !!GROQ_KEY;
+  $("useGroq").disabled = !GROQ_KEY;
+  $("useGroq").onchange = e => USE_GROQ = e.target.checked;
 }
+buildModelList();
 
 // ============================================================
-// WEBBSÖKNING
+// WEBBSÖKNING (DuckDuckGo – CORS-vänlig)
 // ============================================================
 async function webSearch(query) {
   try {
@@ -144,103 +144,96 @@ async function webSearch(query) {
 }
 
 // ============================================================
-// LEVERANTÖRSANROP
+// FALLBACK-KEDJA
 // ============================================================
-async function callLLM(model, messages, opts = {}) {
+async function callLLM(modelName, messages, opts = {}) {
   const temp = opts.temperature ?? 0.7;
+  const errors = [];
 
-  // 1. Puter (endast för Puter-modeller)
-  if (PUTER_MODELS.includes(model) && typeof puter !== "undefined") {
-    try {
-      const resp = await puter.ai.chat(messages, { model, temperature: temp });
-      const text = typeof resp === "string" ? resp : (resp?.message?.content ?? String(resp));
-      if (text?.trim()) return { text, provider: "Puter" };
-    } catch (e) { /* faller vidare */ }
+  // Bestäm provider utifrån modellnamn
+  const [provider, ...rest] = modelName.split("/");
+  const actualModel = rest.join("/");
+
+  // 1. uncloseai (keyless)
+  if (provider === "uncloseai" || provider === "pollinations" || provider === "keylessai" || provider === "llm7") {
+    // Keyless-kedja – testa i ordning
+    const chain = [
+      { label: "uncloseai", url: UNCLOSE_BASE + "/chat/completions", model: actualModel || "turboderp/Qwen3.8-27B-exl3" },
+      { label: "Pollinations", url: POLL_BASE, model: actualModel || "openai" },
+      { label: "KeylessAI", url: KEYLESS_BASE + "/chat/completions", model: actualModel || "openai-fast" },
+      { label: "LLM7", url: LLM7_BASE + "/chat/completions", model: actualModel || "gpt-4o-mini", auth: "unused" }
+    ];
+
+    for (const c of chain) {
+      try {
+        const headers = { "Content-Type": "application/json" };
+        if (c.auth) headers["Authorization"] = "Bearer " + c.auth;
+        const r = await fetch(c.url, {
+          method: "POST",
+          headers,
+          body: JSON.stringify({ model: c.model, messages, temperature: temp, max_tokens: 1200 })
+        });
+        if (r.ok) {
+          const data = await r.json();
+          const txt = data.choices?.[0]?.message?.content;
+          if (txt?.trim()) return { text: txt, provider: c.label };
+        }
+        errors.push(c.label + ": HTTP " + r.status);
+      } catch (e) { errors.push(c.label + ": " + (e.message || e)); }
+    }
   }
 
-  // 2. LLM7 (om modellen finns där)
-  if (LLM7_MODELS.includes(model)) {
+  // 2. GitHub Models (om token finns)
+  if (provider === "github" && GITHUB_TOKEN) {
     try {
-      const r = await fetch(LLM7_BASE + "/chat/completions", {
+      const r = await fetch("https://models.inference.ai.azure.com/chat/completions", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": "Bearer unused"
-        },
-        body: JSON.stringify({ model, messages, temperature: temp })
+        headers: { "Content-Type": "application/json", "Authorization": "Bearer " + GITHUB_TOKEN },
+        body: JSON.stringify({ model: actualModel, messages, temperature: temp })
       });
       if (r.ok) {
         const data = await r.json();
         const txt = data.choices?.[0]?.message?.content;
-        if (txt?.trim()) return { text: txt, provider: "LLM7" };
+        if (txt?.trim()) return { text: txt, provider: "GitHub Models" };
       }
-    } catch {}
+      errors.push("GitHub Models: HTTP " + r.status);
+    } catch (e) { errors.push("GitHub Models: " + (e.message || e)); }
   }
 
-  // 3. Sista utpost: uncloseai (en enda anonym modell)
-  try {
-    const r = await fetch(UNCLOSE_BASE + "/chat/completions", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: "turboderp/Qwen3.8-27B-exl3", // fungerande modell-ID
-        messages,
-        temperature: temp,
-        max_tokens: 1200
-      })
-    });
-    if (r.ok) {
-      const data = await r.json();
-      const txt = data.choices?.[0]?.message?.content;
-      if (txt?.trim()) return { text: txt, provider: "uncloseai (reserv)" };
-    }
-  } catch {}
+  // 3. Groq (om nyckel finns)
+  if (provider === "groq" && GROQ_KEY) {
+    try {
+      const r = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": "Bearer " + GROQ_KEY },
+        body: JSON.stringify({ model: actualModel, messages, temperature: temp })
+      });
+      if (r.ok) {
+        const data = await r.json();
+        const txt = data.choices?.[0]?.message?.content;
+        if (txt?.trim()) return { text: txt, provider: "Groq" };
+      }
+      errors.push("Groq: HTTP " + r.status);
+    } catch (e) { errors.push("Groq: " + (e.message || e)); }
+  }
 
-  // 4. Sista utpost: KeylessAI (anonym standardmodell)
-  try {
-    const r = await fetch(KEYLESS_BASE + "/chat/completions", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ model: "openai-fast", messages, temperature: temp })
-    });
-    if (r.ok) {
-      const data = await r.json();
-      const txt = data.choices?.[0]?.message?.content;
-      if (txt?.trim()) return { text: txt, provider: "KeylessAI (reserv)" };
-    }
-  } catch {}
-
-  // 5. Absolut sista: Pollinations (kan kräva nyckel – testas tyst)
-  try {
-    const r = await fetch(POLL_BASE, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ model: "openai", messages, temperature: temp })
-    });
-    if (r.ok) {
-      const data = await r.json();
-      const txt = data.choices?.[0]?.message?.content;
-      if (txt?.trim()) return { text: txt, provider: "Pollinations (reserv)" };
-    }
-  } catch {}
-
-  throw new Error("Ingen leverantör svarade. Kontrollera internetanslutningen.");
+  throw new Error("Alla leverantörer misslyckades. " + errors.join(" | "));
 }
 
 // ============================================================
-// KÖ
+// KÖ MED ADAPTIV VÄNTAN
 // ============================================================
-async function ask(model, messages, onWait) {
+async function ask(modelName, messages, onWait) {
   const MAX = 2;
   for (let attempt = 0; attempt < MAX; attempt++) {
-    const isPremium = PUTER_MODELS.includes(model) || LLM7_MODELS.includes(model);
-    const baseGap = isPremium ? 1000 : 15000;
+    const isKeyless = modelName.startsWith("uncloseai/") || modelName.startsWith("pollinations/") || modelName.startsWith("keylessai/") || modelName.startsWith("llm7/");
+    const baseGap = isKeyless ? 6000 : 2000;
     const gap = baseGap - (Date.now() - lastCall);
-    if (gap > 0) { onWait?.(Math.ceil(gap/1000)); await sleep(gap); }
+    if (gap > 0) { onWait?.(Math.ceil(gap / 1000)); await sleep(gap); }
     lastCall = Date.now();
 
     try {
-      return await callLLM(model, messages);
+      return await callLLM(modelName, messages);
     } catch (e) {
       if (attempt === MAX - 1) throw e;
       await sleep(5000);
@@ -249,9 +242,9 @@ async function ask(model, messages, onWait) {
 }
 
 // ============================================================
-// AGENT-LOOP
+// AGENT-LOOP (ReAct)
 // ============================================================
-async function runAgent(model, userQuery, onProgress) {
+async function runAgent(modelName, userQuery, onProgress) {
   const system = `Du är en noggrann AI-assistent med verktyget web_search(query).
 Använd verktyget vid behov. Skriv exakt "ACTION: web_search(\"fråga\")" för att söka.
 Ge annars ett välstrukturerat slutsvar. Svara på användarens språk.`;
@@ -261,9 +254,9 @@ Ge annars ett välstrukturerat slutsvar. Svara på användarens språk.`;
     { role: "user", content: userQuery }
   ];
 
-  for (let step = 0; step < 4; step++) {
+  for (let step = 0; step < 3; step++) {
     onProgress?.(`Tänker (steg ${step+1})...`);
-    const { text, provider } = await ask(model, messages, s => onProgress?.(`väntar ${s}s...`));
+    const { text, provider } = await ask(modelName, messages, s => onProgress?.(`väntar ${s}s...`));
     onProgress?.(`Svar från ${provider}`);
 
     const m = text.match(/ACTION:\s*web_search\(["']?(.+?)["']?\)/i);
@@ -320,8 +313,7 @@ $("go").onclick = async () => {
         answer = res.text; provider = res.provider;
       }
 
-      p.textContent = answer;
-      p.className = provider.includes("reserv") ? "warn" : "ok";
+      p.textContent = answer; p.className = "ok";
       s.textContent = `✓ ${name} (via ${provider})`;
       results.push({ name, answer, provider });
     } catch (e) {
@@ -331,12 +323,11 @@ $("go").onclick = async () => {
   }
 
   if (!results.length) {
-    fp.className = "err"; fp.textContent = "Inga modeller svarade. Försök igen.";
+    fp.className = "err"; fp.textContent = "Inga modeller svarade. Försök igen om en stund.";
     $("prog").textContent = ""; btn.disabled = false; return;
   }
   if (results.length === 1) {
-    fp.textContent = results[0].answer;
-    $("prog").textContent = ""; btn.disabled = false; return;
+    fp.textContent = results[0].answer; $("prog").textContent = ""; btn.disabled = false; return;
   }
 
   // Domare
@@ -356,8 +347,6 @@ $("go").onclick = async () => {
 
   $("prog").textContent = ""; btn.disabled = false;
 };
-
-loadModels();
 </script>
 </body>
 </html>
