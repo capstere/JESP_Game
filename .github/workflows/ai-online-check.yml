@@ -1,0 +1,40 @@
+name: Published anonymous AI check
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/ai-online-check.yml', 'tests/live-online-check.mjs']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  published-online-ai:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install Chromium only, without optional local-model dependencies
+        run: |
+          mkdir -p /tmp/jesp-online-check
+          cd /tmp/jesp-online-check
+          npm init -y
+          npm install --save-exact playwright@latest
+          npx playwright install chromium
+      - name: Verify the published website with actual anonymous responses
+        env:
+          SOURCE_ROOT: ${{ github.workspace }}
+        run: |
+          cp tests/live-online-check.mjs /tmp/jesp-online-check/test.mjs
+          cd /tmp/jesp-online-check
+          node test.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: published-ai-evidence
+          path: test-artifacts-online/
+          retention-days: 7
+          if-no-files-found: warn
