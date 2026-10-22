@@ -1,0 +1,43 @@
+name: Agent capability probes
+on:
+  push:
+    branches: [feat/free-agents-v5]
+    paths: [.github/workflows/agent-probe.yml]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  browser-probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    steps:
+      - name: Install pinned browser runner
+        run: |
+          mkdir -p /tmp/probe && cd /tmp/probe
+          npm init -y
+          npm install --save-exact playwright@1.56.1
+          npx playwright install chromium
+      - name: Probe real anonymous CORS access from published origin
+        working-directory: /tmp/probe
+        run: |
+          cat > probe.mjs <<'JS'
+          import {chromium} from 'playwright';
+          const browser=await chromium.launch({headless:true});
+          const page=await browser.newPage();
+          await page.goto('https://capstere.github.io/JESP_Game/',{waitUntil:'domcontentloaded'});
+          const report=await page.evaluate(async()=>{
+            const out=[];
+            async function req(label,url,body){try{const r=await fetch(url,{method:body?'POST':'GET',credentials:'omit',headers:body?{'Content-Type':'application/json',Accept:'application/json, text/event-stream'}:{},body:body?JSON.stringify(body):undefined,signal:AbortSignal.timeout(40000)});const text=await r.text();out.push({label,status:r.status,text:text.slice(0,label.includes('list')?14000:6000)});return {r,text};}catch(e){out.push({label,error:e.message});return {};}}
+            const cat=await req('kilo catalog','https://ai-gateway.kilo.ai/api/v1/models');
+            try{const models=JSON.parse(cat.text).data;const free=models.filter(m=>m.id.endsWith(':free')||m.id==='kilo-auto/free');out.push({freeModels:free.map(m=>({id:m.id,pricing:m.pricing}))});const m=free.find(m=>/minimax|glm|qwen/.test(m.id))||free[0];if(m)await req('kilo real inference','https://ai-gateway.kilo.ai/api/v1/chat/completions',{model:m.id,messages:[{role:'user',content:'Calculate 19 plus 23. Reply only with the number.'}],max_tokens:256,stream:false});}catch(e){out.push({catalogError:e.message});}
+            for(const [name,url] of [['parallel','https://search.parallel.ai/mcp'],['exa','https://mcp.exa.ai/mcp']]){
+              await req(name+' initialize',url,{jsonrpc:'2.0',id:1,method:'initialize',params:{protocolVersion:'2024-11-05',capabilities:{},clientInfo:{name:'JESP-agent-check',version:'5.0'}}});
+              await req(name+' tools list',url,{jsonrpc:'2.0',id:2,method:'tools/list',params:{}});
+            }
+            await req('wikipedia','https://sv.wikipedia.org/w/api.php?action=query&list=search&srsearch=WebAssembly&format=json&origin=*');
+            return out;
+          });
+          console.log('PROBE_REPORT '+JSON.stringify(report));
+          await browser.close();
+          JS
+          node probe.mjs
