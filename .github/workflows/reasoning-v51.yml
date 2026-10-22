@@ -1,0 +1,30 @@
+name: Reasoning v5.1 regression and live check
+on:
+  push:
+    branches: [fix/reasoning-v51]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Deterministic regressions (mocked AI)
+        run: node --test tests/agent-unit.mjs tests/reasoning-v51.mjs
+      - name: Install pinned browser
+        run: |
+          npm install --no-save --package-lock=false playwright@1.56.1
+          npx playwright install --with-deps chromium
+      - name: Real anonymous multi-file reasoning task
+        run: node tests/reasoning-live-v51.mjs
+      - name: Save actual browser evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reasoning-live-v51
+          path: reasoning-live-evidence/

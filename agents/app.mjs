@@ -1,18 +1,21 @@
-import {AI,Workspace,runAgent,freeModels,VERSION,check} from './core.mjs';
+import {AI,Workspace,runAgent,freeModels,VERSION,check} from './core.mjs?v=5.1.0';
 import {executeJS} from './sandbox.mjs';
 import {zipFiles} from './zip.mjs';
 import {localAnswer,unloadLocal} from './local.mjs';
 const $=id=>document.getElementById(id);
-let busy=false,controller=null,space=null,result=null,question='';
+let busy=false,controller=null,space=null,result=null,question='',settings={};
 const node=(tag,text,cls)=>{const e=document.createElement(tag);if(text!==undefined)e.textContent=text;if(cls)e.className=cls;return e;};
 function status(text,cls=''){ $('status').textContent=text;$('status').className=cls; }
 function controls(){
- for(const id of ['run','test','checkKilo','provider','model','steps','web','review','code','prompt','downloadConsent'])$(id).disabled=busy;
+ for(const id of ['run','test','checkKilo','provider','model','steps','reasoning','web','review','code','prompt','downloadConsent'])$(id).disabled=busy;
  for(const e of document.querySelectorAll('[data-example]'))e.disabled=busy;
  $('cancel').disabled=!busy||!controller||controller.signal.aborted;
  $('run').textContent=busy?'Agenten arbetar…':'Starta agenten gratis';
  $('copy').disabled=!$('answer').textContent;
- $('save').disabled=!space;
+ $('save').disabled=!space || !(space.audit.length || space.files.size || space.trace?.length);
+ $('save').textContent=busy?'Spara diagnostik / delresultat':'Spara uppdrag som ZIP';
+ $('continue').disabled=busy||!space||(!result?.unfinished&&!space.lastError);
+ $('continue').hidden=!space;
 }
 function download(name,content){const blob=content instanceof Blob?content:new Blob([content],{type:'text/plain;charset=utf-8'});const url=URL.createObjectURL(blob);const a=node('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),30000);}
 function log(title,data,kind=''){
@@ -35,10 +38,12 @@ function emit(type,data){
  if(type==='action'){const args=data.args||{};const label=args.query||args.url||args.name||args.expression||'';log('Start: '+data.tool+(label?' · '+String(label).slice(0,180):''));}
  if(type==='observation')log((data.ok?'OK: ':'Fel: ')+data.tool,data,data.ok?'':'error');
  if(type==='file'){files();controls();}
- if(type==='source'){const div=node('div',undefined,'source');const a=node('a',`[${data.id}] ${data.title}`);a.href=data.url;a.target='_blank';a.rel='noopener noreferrer';div.append(a,node('small',new URL(data.url).hostname));$('sources').append(div);$('sourceCount').textContent=space.sources.size;}
+ if(type==='source'){let div=[...$('sources').children].find(e=>e.dataset.sourceId===data.id);if(!div){div=node('div',undefined,'source');div.dataset.sourceId=data.id;$('sources').append(div);}const a=node('a',`[${data.id}] ${data.title}`);a.href=data.url;a.target='_blank';a.rel='noopener noreferrer';const labels={read:'Hämtad text',found:'Sökträff',thin:'Otillräcklig text'};div.replaceChildren(a,node('small',`${labels[data.status]||'Hittad länk'} · ${new URL(data.url).hostname}`));$('sourceCount').textContent=space.sources.size;}
  if(type==='draft'){$('answer').textContent=data;$('answerNote').textContent='Utkast. Granskning är inte slutförd.';controls();}
- if(type==='review'){$('issues').textContent=data.issues.map(String).join('\n');log('Granskarens anmärkningar',data.issues);}
- if(type==='done'){result=data;$('answer').textContent=data.answer;$('answerNote').textContent=(data.unfinished?'Ofullständigt uppdrag. ':'')+(data.reviewed?'Separat AI-granskning utförd. Det är inte en garanti för korrekthet.':'Ingen slutförd separat AI-granskning.');}
+ if(type==='review'){$('issues').textContent=data.issues.map(String).join('\n');log(data.verdict==='pass'?'Granskning godkänd':'Kritik → rättningsrunda',data);}
+ if(type==='trace')controls();
+ if(type==='trace'&&['ai_start','ai_end','ai_error','finish_blocked','run_stopped'].includes(data.type))log('Körspår: '+data.type,data);
+ if(type==='done'){result=data;$('answer').textContent=data.answer;$('answerNote').textContent=(data.unfinished?'Ofullständigt uppdrag. ':'')+(data.reviewPassed?'Separat AI-granskning godkände aktuell leverans; ingen korrekthetsgaranti.':data.reviewed?'Granskning utförd, men slutleveransen är inte godkänd.':'Ingen godkänd separat AI-granskning.');$('issues').textContent=(data.issues||[]).join('\n');}
 }
 function explain(e){
  if(e.name==='AbortError')return 'Avbrutet. Skapade filer och mottagna resultat finns kvar.';
@@ -48,22 +53,26 @@ function explain(e){
  if(e instanceof TypeError)return 'Nätverksfel eller blockerad webbläsaranslutning. '+e.message;
  return e.message||String(e);
 }
-async function run(test=false){
+async function run(test=false,resume=false){
  if(busy)return;
- const input=test?'Vad är 7 plus 5? Svara endast med talet.':$('prompt').value.trim();
+ const input=test?'Vad är 7 plus 5? Svara endast med talet.':resume?question:$('prompt').value.trim();
+ if(resume&&$('prompt').value.trim()!==question){status('Återställ uppdragstexten innan du fortsätter, eller välj Starta för ett nytt uppdrag.','error');return;}
  if(!input){status('Skriv ett uppdrag först.');$('prompt').focus();return;}
  if($('provider').value==='local'&&!$('downloadConsent').checked){status('Godkänn modellnedladdningen i inställningarna först.','error');$('settings').open=true;return;}
  question=input;controller=new AbortController();const signal=controller.signal;busy=true;result=null;
- space=new Workspace({signal,emit,web:$('web').checked,allowCode:$('code').checked,execute:executeJS,question});
- $('workspace').hidden=false;for(const id of ['answer','issues','log','files','sources','plan'])$(id).replaceChildren();$('fileCount').textContent=$('sourceCount').textContent='0';$('answerNote').textContent='Arbetar. Verktygsresultat visas i loggen.';controls();
- const ai=new AI({provider:$('provider').value,model:$('model').value,onStatus:status,local:localAnswer});
+ settings={provider:$('provider').value,model:$('model').value,reasoning:$('reasoning').value,maxSteps:Number($('steps').value),web:$('web').checked,review:$('review').checked,allowCode:$('code').checked};
+ if(resume){space.signal=signal;space.web=settings.web;space.allowCode=settings.allowCode;space.offline.clear();space.lastError=null;}else space=new Workspace({signal,emit,web:settings.web,allowCode:settings.allowCode,execute:executeJS,question});
+ $('workspace').hidden=false;if(!resume){for(const id of ['answer','issues','log','files','sources','plan'])$(id).replaceChildren();$('fileCount').textContent=$('sourceCount').textContent='0';$('answerNote').textContent='Arbetar. Verktygsresultat visas i loggen.';}controls();
+ let lastStatusKey='';
+ const transportStatus=text=>{status(text);const key=text.replace(/\d+/g,'#');if(key!==lastStatusKey){space.trace.push({time:new Date().toISOString(),type:'status',message:text});lastStatusKey=key;}};
+ const ai=new AI({provider:$('provider').value,model:$('model').value,onStatus:transportStatus,local:localAnswer,reasoning:settings.reasoning});
  try{
-  if(test){const answer=await ai.ask([{role:'user',content:input}],signal,64);check(signal);emit('done',{answer:answer.text,reviewed:false,unfinished:false,calls:ai.calls,model:answer.model});emit('model',{model:answer.model,calls:ai.calls});status('Ett riktigt AI-svar mottogs. Detta testar anslutningen, inte hela agenten.','success');}
-  else{result=await runAgent({question,ai,space,signal,maxSteps:Number($('steps').value),review:$('review').checked,emit});status(result.unfinished?'Steggränsen nåddes. Se delresultaten.':'Körningen är klar. Kontrollera resultat och filer.',result.unfinished?'warning':'success');}
- }catch(e){status(explain(e),e.name==='AbortError'?'':'error');log('Körningen stoppades',String(e.message||e),'error');$('answerNote').textContent='Ofullständig körning. Resultat och filer som redan skapats har behållits.';}
+  if(test){const answer=await ai.ask([{role:'user',content:input}],signal,64);check(signal);space.totalCalls=ai.calls;space.trace.push({type:'connection_test',model:answer.model,calls:ai.calls,requestedReasoning:ai.reasoning});emit('done',{answer:answer.text,reviewed:false,reviewPassed:false,unfinished:false,calls:ai.calls,model:answer.model});emit('model',{model:answer.model,calls:ai.calls});status('Ett riktigt AI-svar mottogs. Detta testar anslutningen, inte hela agenten.','success');}
+  else{result=await runAgent({question,ai,space,signal,maxSteps:Number($('steps').value),review:$('review').checked,emit});status(result.unfinished?'Uppdraget är ofullständigt. Se kvarvarande problem eller tryck Fortsätt.':'Leveranskontrollen är klar. Kontrollera resultat och filer.',result.unfinished?'warning':'success');}
+ }catch(e){space.lastError={name:e.name,message:e.message,status:e.status||null,time:new Date().toISOString()};space.trace.push({type:'ui_error',...space.lastError});status(explain(e),e.name==='AbortError'?'':'error');log('Körningen stoppades',String(e.message||e),'error');$('answerNote').textContent='Ofullständig körning. Resultat och filer som redan skapats har behållits.';}
  finally{busy=false;controller=null;for(const el of document.querySelectorAll('[data-stage]'))el.classList.remove('active');controls();}
 }
-$('run').onclick=()=>run();$('test').onclick=()=>run(true);
+$('run').onclick=()=>run();$('test').onclick=()=>run(true);$('continue').onclick=()=>run(false,true);
 $('cancel').onclick=()=>{controller?.abort(new DOMException('Avbrutet av användaren','AbortError'));status('Avbryter…');controls();};
 $('prompt').addEventListener('keydown',e=>{if((e.ctrlKey||e.metaKey)&&e.key==='Enter'){e.preventDefault();run();}});
 $('provider').onchange=()=>{$('localNote').hidden=$('provider').value!=='local';$('kiloSettings').hidden=$('provider').value!=='kilo';if($('provider').value!=='local')unloadLocal();};
@@ -76,11 +85,11 @@ $('checkKilo').onclick=async()=>{
 $('copy').onclick=async()=>{try{await navigator.clipboard.writeText($('answer').textContent);status('Svaret kopierat.','success');}catch{status('Urklipp blockerades. Markera texten och kopiera manuellt.','error');}};
 $('save').onclick=()=>{
  if(!space)return;
- const meta={version:VERSION,question,answer:$('answer').textContent,reviewed:result?.reviewed||false,unfinished:busy||!result||result.unfinished,sources:[...space.sources.values()],audit:space.audit};
+ const meta={version:VERSION,question,answer:$('answer').textContent,settings,reviewed:result?.reviewed||false,reviewPassed:result?.reviewPassed||false,unfinished:busy||!result||result.unfinished,stopReason:busy?'running':space.lastError?'error':result?.stopReason||'unknown',error:space.lastError,calls:space.totalCalls,model:result?.model||space.lastModel||null,issues:result?.issues||space.pendingIssues||[],sources:[...space.sources.values()],audit:space.audit,reviews:space.reviews,trace:space.trace,files:[...space.files.values()].map(({name,bytes,version})=>({name,bytes,version}))};
  const all=[...space.files.values()].map(f=>({name:'filer/'+f.name,content:f.content}));
- all.push({name:'uppdrag.json',content:JSON.stringify(meta,null,2)},{name:'resultat.md',content:'# JESP AI\n\n'+question+'\n\n'+$('answer').textContent+'\n\n## Källor\n'+[...space.sources.values()].map(s=>`[${s.id}] ${s.url}`).join('\n')});
+ all.push({name:'korspar.json',content:JSON.stringify(space.trace,null,2)},{name:'kallunderlag.json',content:JSON.stringify(Object.fromEntries(space.evidence),null,2)},{name:'uppdrag.json',content:JSON.stringify(meta,null,2)},{name:'resultat.md',content:'# JESP AI\n\n'+question+'\n\n'+$('answer').textContent+'\n\n## Källor\n'+[...space.sources.values()].map(s=>`[${s.id}] ${s.url}`).join('\n')});
  download('JESP_AI_uppdrag.zip',zipFiles(all));
 };
 const examples={research:'Sök i officiella källor vad WebAssembly är. Läs en relevant källa och skriv en kort svensk rapport med källhänvisningar. Spara rapporten som webassembly.md. Hitta inte på fakta om verktygen misslyckas.',code:'Skapa en liten JavaScript-funktion sum(a,b) i sum.js. Skriv två tester, inklusive negativa tal. Kör testerna om jag har aktiverat isolerade JavaScript-tester. Spara en README.md som är tydlig med vilka tester som faktiskt kördes.',calculate:'Räkna (125 * 8) - 175 med calculate-verktyget. Skapa resultat.json med uttrycket och resultatet. Kontrollera filens JSON-syntax med inspect_file och sammanfatta resultatet.'};
 for(const e of document.querySelectorAll('[data-example]'))e.onclick=()=>{$('prompt').value=examples[e.dataset.example];$('prompt').focus();};
-window.JESP_AGENT_BOOTED=true;window.JESP_AI_BOOTED=true;status('Redo. Skriv ett uppdrag eller välj ett exempel.');controls();
+window.JESP_AGENT_BOOTED=true;window.JESP_AI_BOOTED=true;status('Version 5.1 · Fördjupat läge, leveranskontroll och kritiker → rättning är redo.');controls();

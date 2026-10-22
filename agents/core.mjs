@@ -1,7 +1,8 @@
-import {decodeNativeCalls} from './protocol.mjs';
-import {runAgentImpl} from './runner.mjs';
+import {requestedFiles,sourceDocuments,cleanText,textQuality,verifyQuote} from './evidence.mjs?v=5.1.0';
+import {decodeNativeCalls} from './protocol.mjs?v=5.1.0';
+import {runAgentImpl} from './runner.mjs?v=5.1.0';
 /* JESP AI v5. No API keys, paid routes, accounts or persistent prompt storage. */
-export const VERSION = '5.0.0';
+export const VERSION = '5.1.0';
 const POLL = 'https://text.pollinations.ai/openai';
 const KILO = 'https://ai-gateway.kilo.ai/api/v1';
 const enc = new TextEncoder();
@@ -48,14 +49,14 @@ export function extractAnswer(data) {
   if (data?.error) throw new Error(data.error.message || String(data.error));
   const choice = data?.choices?.[0];
   const native=decodeNativeCalls(choice?.message);
-  if(native)return {...native,model:String(data.model||'okänt modellalias'),truncated:choice.finish_reason==='length'};
+  if(native)return {...native,model:String(data.model||'okänt modellalias'),truncated:choice.finish_reason==='length',usage:data.usage||null};
   let text = choice?.message?.content;
   if (Array.isArray(text)) text = text.filter(p=>p.type === 'text').map(p=>p.text).join('\n');
   if (typeof text !== 'string' || !text.trim()) {
     const info = {model:data?.model,finish:choice?.finish_reason,fields:Object.keys(choice?.message||{}),usage:data?.usage};
     throw new Error('AI:n gav inget slutsvar. ' + (choice?.finish_reason === 'length' ? 'Svarstoken tog slut före sluttexten. ' : '') + JSON.stringify(info));
   }
-  return {text:text.trim(), model:String(data.model || 'okänt modellalias'), truncated:choice.finish_reason === 'length'};
+  return {text:text.trim(), model:String(data.model || 'okänt modellalias'), truncated:choice.finish_reason === 'length',usage:data.usage||null};
 }
 let nextPoll = 0;
 function savedNext() {try{return Number(localStorage.getItem('jesp-next-anonymous-call')) || 0;}catch{return 0;}}
@@ -70,9 +71,15 @@ export async function freeModels(signal) {
   return (Array.isArray(list.data) ? list.data : []).filter(freeModel);
 }
 export class AI {
-  constructor({provider = 'pollinations', model = '', onStatus = ()=>{}, local = null} = {}) {Object.assign(this,{provider,model,onStatus,local}); this.calls=0; this.lastModel='';}
+  constructor({provider = 'pollinations', model = '', onStatus = ()=>{}, local = null, reasoning = 'medium'} = {}) {Object.assign(this,{provider,model,onStatus,local}); this.reasoning=['low','medium','high'].includes(reasoning)?reasoning:'medium'; this.calls=0; this.lastModel='';}
   async ask(messages, signal, maxTokens = 1800, tools) {
     check(signal);
+    if (this.provider==='pollinations') {
+      messages=messages.map(m=>({...m}));
+      const system=messages.find(m=>m.role==='system');
+      const effort='Reasoning: '+this.reasoning+'.\n';
+      if(system)system.content=effort+system.content;else messages.unshift({role:'system',content:effort});
+    }
     if (JSON.stringify(messages).length > 65000) throw new Error('Uppdragets kontext är för stor. Dela upp det i mindre uppdrag.');
     if (this.provider === 'local') {
       if (!this.local) throw new Error('Den lokala motorn är inte tillgänglig.');
@@ -97,7 +104,7 @@ export class AI {
         }
         check(signal); this.onStatus('Frågar Pollinations utan konto…'); this.calls++; setNext(Date.now()+31000);
         try {
-          const result = extractAnswer(await request(POLL,{signal,timeout:90000,body:{model:'openai',messages,max_tokens:Math.max(maxTokens,4096),reasoning_effort:'low',temperature:0.2,stream:false,...(tools?{tools,tool_choice:'auto'}:{})}}));
+          const result = extractAnswer(await request(POLL,{signal,timeout:({low:90000,medium:150000,high:210000})[this.reasoning],body:{model:'openai',messages,max_tokens:Math.min(16384,Math.max(maxTokens,({low:4096,medium:8192,high:16384})[this.reasoning])),reasoning_effort:this.reasoning,temperature:0.2,stream:false,...(tools?{tools,tool_choice:'auto'}:{})}}));
           setNext(Date.now()+31000); this.lastModel=result.model; return result;
         } catch (e) {
           const limited = e.freeLimit || e.status === 429;
@@ -168,23 +175,30 @@ class MCP {
 function plainHTML(value) {return String(value).replace(/<[^>]*>/g,' ').replace(/&quot;/g,'"').replace(/&#39;/g,"'").replace(/&amp;/g,'&').replace(/\s+/g,' ').trim();}
 export class Workspace {
   constructor({signal,emit=()=>{},web=true,allowCode=false,execute=null,question=''}={}) {
-    Object.assign(this,{signal,emit,web,allowCode,execute});this.expectedNames=new Set();
-    for(const m of question.matchAll(/(?:skapa|spara\s+(?:som)?|create|save\s+as)\s+[`"']?([\p{L}\p{N}][\p{L}\p{N}_-]*\.(?:json|md|txt|html|js|css|csv|py))\b/giu)){try{this.expectedNames.add(filename(m[1]));}catch{}}this.files=new Map();this.sources=new Map();this.allowed=new Set();this.audit=[];this.session=globalThis.crypto?.randomUUID?.()||String(Date.now());
+    Object.assign(this,{signal,emit,web,allowCode,execute,question});
+    this.expectedNames=new Set(requestedFiles(question).filter(n=>{try{filename(n);return true;}catch{return false;}}));
+    this.files=new Map();this.sources=new Map();this.allowed=new Set();this.evidence=new Map();this.audit=[];this.trace=[];this.reviews=[];this.pendingIssues=[];this.totalCalls=0;this.lastError=null;
+    this.session=globalThis.crypto?.randomUUID?.()||String(Date.now());
     this.parallel=new MCP('https://search.parallel.ai/mcp');this.exa=new MCP('https://mcp.exa.ai/mcp');this.offline=new Set();
     for(const u of question.match(/https:\/\/[^\s<>"\])]+/g)||[]){try{this.allowed.add(safeURL(u));}catch{}}
   }
   addSource(url,title='') {
     try {const safe=safeURL(url);this.allowed.add(safe);if(!this.sources.has(safe)){const item={id:'S'+(this.sources.size+1),url:safe,title:title||new URL(safe).hostname};this.sources.set(safe,item);this.emit('source',item);}return this.sources.get(safe);}catch{return null;}
   }
-  sourceText(data,provider) {
-    const chunks=(data.content||[]).filter(c=>c.type==='text').map(c=>c.text||'');
-    const text=chunks.join('\n') || JSON.stringify(data.structuredContent||data);
-    // Only source URLs actually returned by the search/fetch service become clickable sources.
-    const walk=v=>{if(!v||typeof v!=='object')return;if(typeof v.url==='string')this.addSource(v.url,v.title);if(typeof v.link==='string')this.addSource(v.link,v.title);for(const x of Object.values(v))if(typeof x==='object')walk(x);};
-    walk(data.structuredContent);
-    for(const chunk of chunks){try{walk(JSON.parse(chunk));}catch{}}
-    for(const url of text.match(/https:\/\/[^\s<>"\\\])}]+/g)||[])this.addSource(url.replace(/[.,;]+$/,''));
-    return {provider,content:text.slice(0,10000),truncated:text.length>10000,sources:[...this.sources.values()].slice(-12)};
+  sourceText(data,provider,requestedURL='') {
+    const docs=sourceDocuments(data,requestedURL),results=[];
+    for(const doc of docs) {
+      let url;try{url=safeURL(doc.url);}catch{continue;}
+      if(requestedURL && url!==requestedURL)continue;
+      const source=this.addSource(url,doc.title);if(!source)continue;
+      const text=cleanText(doc.text),quality=textQuality(text);
+      if(requestedURL){source.status=quality.usable?'read':'thin';source.fetchedAt=new Date().toISOString();source.provider=provider;source.quality=quality;this.evidence.set(source.id,text.slice(0,40000));}
+      else if(!source.status)source.status='found';
+      this.emit('source',source);
+      results.push({source_id:source.id,url:source.url,title:source.title,status:source.status,text:text.slice(0,requestedURL?9000:1200),truncated:text.length>(requestedURL?9000:1200),...(requestedURL?{quality}:{})});
+    }
+    if(!results.length)throw new Error('Tjänsten gav ingen identifierbar källa med innehåll. Inga länkar i sidans navigering räknas som källor.');
+    return {provider,results,note:requestedURL?'Hämtad text. Kontrollera relevans, citat och tolkning.':'Sökutdrag, INTE fullständigt lästa källor.'};
   }
   async search(query) {
     if(!this.web)throw new Error('Webbverktyg är avstängda.');
@@ -194,8 +208,8 @@ export class Workspace {
       ['Parallel',this.parallel,'web_search',{objective:query,search_queries:[query],session_id:this.session}],
       ['Exa',this.exa,'web_search_exa',{query,objective:query,numResults:4}]
     ]){
-      if(this.offline.has(name))continue;
-      try{return this.sourceText(await client.call(tool,args,this.signal),name);}catch(e){check(this.signal);errors.push(name+': '+e.message);this.offline.add(name);this.emit('warning',name+' kunde inte användas. Provar nästa öppen sökväg.');}
+      if(this.offline.has(name+':search'))continue;
+      try{return this.sourceText(await client.call(tool,args,this.signal),name);}catch(e){check(this.signal);errors.push(name+': '+e.message);this.offline.add(name+':search');this.emit('warning',name+' kunde inte användas. Provar nästa öppen sökväg.');}
     }
     const wiki=await request('https://sv.wikipedia.org/w/api.php?'+new URLSearchParams({action:'query',list:'search',srsearch:query,srlimit:'4',format:'json',origin:'*'}),{signal:this.signal,timeout:15000});
     if(wiki.error)throw new Error(wiki.error.info||'Wikipedia-sökningen misslyckades.');
@@ -205,19 +219,20 @@ export class Workspace {
   async readURL(raw) {
     if(!this.web)throw new Error('Webbverktyg är avstängda.');
     const url=safeURL(raw);if(!this.allowed.has(url))throw new Error('Läs bara en URL som användaren gav eller som sökningen faktiskt hittade.');
+    const cached=this.sources.get(url);if(cached?.status==='read'&&this.evidence.has(cached.id))return {cached:true,results:[{source_id:cached.id,url,text:this.evidence.get(cached.id),status:'read'}]};
     for(const [name,client,tool,args] of [
       ['Parallel',this.parallel,'web_fetch',{urls:[url],session_id:this.session}],
       ['Exa',this.exa,'web_fetch_exa',{urls:[url]}]
-    ]){if(this.offline.has(name))continue;try{return this.sourceText(await client.call(tool,args,this.signal),name);}catch(e){check(this.signal);this.offline.add(name);this.emit('warning',name+' kunde inte läsa sidan.');}}
+    ]){if(this.offline.has(name+':read'))continue;try{const result=this.sourceText(await client.call(tool,args,this.signal),name,url);if(result.results.some(r=>r.status==='read'))return result;this.emit('warning',name+' gav för lite löptext. Provar nästa läsare.');}catch(e){check(this.signal);this.offline.add(name+':read');this.emit('warning',name+' kunde inte läsa sidan.');}}
     const u=new URL(url);
     if(/^(sv|en)\.wikipedia\.org$/.test(u.hostname)&&u.pathname.startsWith('/wiki/')){
       const data=await request(u.origin+'/w/api.php?'+new URLSearchParams({action:'query',prop:'extracts',explaintext:'1',titles:decodeURIComponent(u.pathname.slice(6)),format:'json',origin:'*'}),{signal:this.signal,timeout:15000});
-      return {source:this.addSource(url),text:Object.values(data.query?.pages||{}).map(p=>p.extract||'').join('\n').slice(0,10000)};
+      return this.sourceText({structuredContent:{results:[{url,text:Object.values(data.query?.pages||{}).map(p=>p.extract||'').join('\n')}]}},'Wikipedia',url);
     }
     throw new Error('Sidläsning är inte tillgänglig från den här webbläsaren just nu. Inget innehåll har lästs.');
   }
   write(name,content) {
-    filename(name);if(this.expectedNames.size===1&&!this.files.size&&!this.expectedNames.has(name))throw new Error('Använd exakt efterfrågat filnamn: '+[...this.expectedNames][0]+'. Översätt inte filnamnet.');if(typeof content!=='string')throw new Error('Filinnehåll måste vara text.');
+    filename(name);if(this.expectedNames.size===1&&!this.files.size&&!this.expectedNames.has(name))throw new Error('Använd först exakt efterfrågat filnamn: '+[...this.expectedNames][0]);if(typeof content!=='string')throw new Error('Filinnehåll måste vara text.');
     const bytes=enc.encode(content).length;
     const total=[...this.files.values()].filter(f=>f.name!==name).reduce((n,f)=>n+f.bytes,0)+bytes;
     if(bytes>100000||total>500000||!this.files.has(name)&&this.files.size>=12)throw new Error('Filgräns: 100 kB/fil, 12 filer, 500 kB totalt.');
@@ -228,6 +243,7 @@ export class Workspace {
     switch(name){
       case 'search':return this.search(args.query);
       case 'read_url':return this.readURL(args.url);
+      case 'verify_quote':{const s=[...this.sources.values()].find(s=>s.id===args.source_id);if(!s||s.status!=='read')throw new Error('Läs källan innan citatet kontrolleras.');if(typeof args.quote!=='string'||args.quote.length>2000)throw new Error('Citat måste vara text, högst 2000 tecken.');return {source_id:s.id,...verifyQuote(this.evidence.get(s.id)||'',args.quote)};}
       case 'calculate':return {expression:args.expression,value:calculate(args.expression)};
       case 'write_file':return this.write(args.name,args.content);
       case 'read_file':{const f=this.files.get(filename(args.name));if(!f)throw new Error('Filen finns inte.');return f;}
