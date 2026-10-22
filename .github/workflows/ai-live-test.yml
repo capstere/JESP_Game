@@ -1,21 +1,15 @@
 name: Real AI browser test
 on:
-  push:
-    branches: [fix/no-login-ai]
-  workflow_run:
-    workflows: [pages build and deployment]
-    types: [completed]
   workflow_dispatch:
     inputs:
       live_url:
-        description: Optional deployed URL; empty stages only the static files
+        description: Optional deployed URL; empty stages static files and also tests local model
         type: string
         required: false
 permissions:
   contents: read
 jobs:
   real-inference:
-    if: github.event_name != 'workflow_run' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main')
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -25,17 +19,18 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Install real browsers
+      - name: Install extended browser dependencies
+        timeout-minutes: 4
         run: |
           mkdir -p /tmp/jesp-ai-browser
           cd /tmp/jesp-ai-browser
           npm init -y
           npm install --save-exact playwright@latest
-          npx playwright install --with-deps chromium webkit > /tmp/browser-install.log 2>&1 || { tail -80 /tmp/browser-install.log; exit 1; }
-      - name: Run actual app with real anonymous API and local model
+          npx playwright install --with-deps chromium webkit
+      - name: Run actual app with real anonymous API and optional local model
         env:
           SOURCE_ROOT: ${{ github.workspace }}
-          LIVE_URL: ${{ github.event_name == 'workflow_run' && 'https://capstere.github.io/JESP_Game/?v=4.0-live' || inputs.live_url || '' }}
+          LIVE_URL: ${{ inputs.live_url || '' }}
         run: |
           cp tests/live-browser.mjs /tmp/jesp-ai-browser/live-browser.mjs
           cd /tmp/jesp-ai-browser

@@ -1,0 +1,18 @@
+{
+  "time": "2026-10-22T19:05:03.745Z",
+  "url": "https://capstere.github.io/JESP_Game/?verified=4.0",
+  "mockedAI": false,
+  "mockedHosting": false,
+  "results": [
+    {"test":"published test button, real AI","answer":"12"},
+    {"test":"published normal question, real AI","question":"31+24","answer":"55"}
+  ],
+  "requests": [
+    {"url":"https://text.pollinations.ai/openai","method":"POST","at":1792695857909,"authenticated":false},
+    {"url":"https://text.pollinations.ai/openai","method":"POST","at":1792695889700,"authenticated":false}
+  ],
+  "responses": [
+    {"url":"https://text.pollinations.ai/openai","status":200,"at":1792695858698},
+    {"url":"https://text.pollinations.ai/openai","status":200,"at":1792695903612}
+  ]
+}

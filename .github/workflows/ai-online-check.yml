@@ -1,13 +1,17 @@
 name: Published anonymous AI check
 on:
-  push:
-    branches: [main]
-    paths: ['.github/workflows/ai-online-check.yml', 'tests/live-online-check.mjs']
+  workflow_run:
+    workflows: [pages build and deployment]
+    types: [completed]
   workflow_dispatch:
 permissions:
   contents: read
+concurrency:
+  group: published-online-ai
+  cancel-in-progress: true
 jobs:
   published-online-ai:
+    if: github.event_name != 'workflow_run' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main')
     runs-on: ubuntu-latest
     timeout-minutes: 8
     steps:
@@ -17,14 +21,14 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Install Chromium only, without optional local-model dependencies
+      - name: Install Chromium only
         run: |
           mkdir -p /tmp/jesp-online-check
           cd /tmp/jesp-online-check
           npm init -y
           npm install --save-exact playwright@latest
           npx playwright install chromium
-      - name: Verify the published website with actual anonymous responses
+      - name: Verify published website with actual anonymous responses
         env:
           SOURCE_ROOT: ${{ github.workspace }}
         run: |
