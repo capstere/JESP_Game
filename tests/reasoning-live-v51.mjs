@@ -20,7 +20,7 @@ try {
   }
   if(!loaded)throw new Error('v5.1 did not boot');
   await page.locator('#settings summary').click();await page.uncheck('#web');
-  await page.selectOption('#steps','12');await page.selectOption('#reasoning','medium');await page.fill('#prompt',task);await page.click('#run');
+  await page.selectOption('#steps','12');await page.selectOption('#reasoning','auto');await page.fill('#prompt',task);await page.click('#run');
   await page.waitForFunction(()=>!document.getElementById('run').disabled,{},{timeout:780000});
   const status=await page.locator('#status').innerText();
   const files=await page.locator('#files .file').evaluateAll(rows=>Object.fromEntries(rows.map(r=>[r.querySelector('strong').textContent,r.querySelector('pre').textContent])));
@@ -31,7 +31,7 @@ try {
     for(const name of ['underlag.md','granskning.md'])if(!files[name]?.trim())throw new Error('Missing '+name);
     if(!(await page.locator('#status').getAttribute('class')).includes('success'))throw new Error(status);
     if(!(await page.locator('#answerNote').innerText()).includes('godkände'))throw new Error('No approved final review');
-    if(!requests.length||requests.some(r=>r.authenticated||r.reasoning!=='medium'||r.max_tokens!==8192))throw new Error('Unexpected authentication or effort settings');
+    if(!requests.length||requests.some(r=>r.authenticated||!['medium','low'].includes(r.reasoning)||![8192,4096].includes(r.max_tokens)))throw new Error('Unexpected authentication or effort settings');
     if(errors.length)throw new Error(errors.join('\n'));
   }catch(e){error=String(e);}
   const dPromise=page.waitForEvent('download');await page.click('#save');await (await dPromise).saveAs(dir+'/workspace.zip');

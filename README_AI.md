@@ -4,7 +4,7 @@
 
 ## Vad som ändrats
 
-- Pollinations-anrop var låsta till `reasoning_effort: low` och minst 4096 svarstoken. Nu är **medium / 8192** standard; low / 4096 och high / 16384 är valbara. Systemmeddelandet anger också begärd nivå. Detta är inställningar i anropet, inte nya modellvikter. Leverantören kan begränsa eller ignorera dem. Längre resonemang är inte alltid bättre.
+- Pollinations-anrop var låsta till `reasoning_effort: low`. Nu är **Auto** standard: börja med medium och begär 8192 token; vid avklippning växla till low och mindre arbetssteg i samma körning. Explicit low/medium/high kan väljas. **Live-test 2026-10-22 visade att svaret klipptes vid 1500 token trots begärda 8192.** Detta är ett observerat serverbeteende, inte ett tak vi kan häva. Högre begärd budget är ingen utlovad kapacitet. Ingen ofullständig verktygsåtgärd körs. Systemmeddelandet anger också begärd nivå; modellvikterna har inte ändrats.
 - Normalläget har 12 beslut, inklusive kritiker och rättningar. 6, 18 och 24 är också valbara. HTTP-återförsök räknas som anrop men inte som ytterligare beslut.
 - En separat kritiker granskar faktiska filer och underlag. Kritik skickas till arbetsagenten som får använda verktyg och ändra filer. Därefter krävs ny granskning. `reviewed` och `reviewPassed` är skilda statusar.
 - Saknade explicit beställda filer blockerar avslut. Filer läses tillbaka automatiskt före slutgranskning och JSON-filer syntaxkontrolleras. Detta är leveranskontroll, inte ett bevis på innehållets riktighet.
@@ -27,7 +27,7 @@ Roller är separata anrop till samma modell, inte oberoende experter. Uppgraderi
 ## Tester
 
 ```sh
-node --test tests/agent-unit.mjs tests/reasoning-v51.mjs
+node --test tests/agent-unit.mjs tests/reasoning-v51.mjs tests/cap-v51.mjs
 ```
 
 Regressionssviten är deterministisk och använder simulerade modeller där AI behövs. Den kontrollerar bland annat riktig filändring efter kritik, saknade leveranser, felaktiga käll-ID, citatmatchning, kontextbudget, återupptagning och anonym anropskonfiguration.

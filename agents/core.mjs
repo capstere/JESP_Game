@@ -48,6 +48,7 @@ async function request(url, {signal, body, headers = {}, timeout = 60000, consum
 export function extractAnswer(data) {
   if (data?.error) throw new Error(data.error.message || String(data.error));
   const choice = data?.choices?.[0];
+  if(choice?.finish_reason==='length')return {text:'',model:String(data.model||'okänt modellalias'),truncated:true,usage:data.usage||null};
   const native=decodeNativeCalls(choice?.message);
   if(native)return {...native,model:String(data.model||'okänt modellalias'),truncated:choice.finish_reason==='length',usage:data.usage||null};
   let text = choice?.message?.content;
@@ -71,14 +72,15 @@ export async function freeModels(signal) {
   return (Array.isArray(list.data) ? list.data : []).filter(freeModel);
 }
 export class AI {
-  constructor({provider = 'pollinations', model = '', onStatus = ()=>{}, local = null, reasoning = 'medium'} = {}) {Object.assign(this,{provider,model,onStatus,local}); this.reasoning=['low','medium','high'].includes(reasoning)?reasoning:'medium'; this.calls=0; this.lastModel='';}
+  constructor({provider = 'pollinations', model = '', onStatus = ()=>{}, local = null, reasoning = 'auto'} = {}) {Object.assign(this,{provider,model,onStatus,local}); this.reasoning=['auto','low','medium','high'].includes(reasoning)?reasoning:'auto'; this.effectiveReasoning=this.reasoning==='auto'?'medium':this.reasoning; this.calls=0; this.lastModel='';}
   async ask(messages, signal, maxTokens = 1800, tools) {
     check(signal);
+    const effort=this.effectiveReasoning;
     if (this.provider==='pollinations') {
       messages=messages.map(m=>({...m}));
       const system=messages.find(m=>m.role==='system');
-      const effort='Reasoning: '+this.reasoning+'.\n';
-      if(system)system.content=effort+system.content;else messages.unshift({role:'system',content:effort});
+      const instruction='Reasoning: '+effort+'.\n';
+      if(system)system.content=instruction+system.content;else messages.unshift({role:'system',content:instruction});
     }
     if (JSON.stringify(messages).length > 65000) throw new Error('Uppdragets kontext är för stor. Dela upp det i mindre uppdrag.');
     if (this.provider === 'local') {
@@ -104,7 +106,9 @@ export class AI {
         }
         check(signal); this.onStatus('Frågar Pollinations utan konto…'); this.calls++; setNext(Date.now()+31000);
         try {
-          const result = extractAnswer(await request(POLL,{signal,timeout:({low:90000,medium:150000,high:210000})[this.reasoning],body:{model:'openai',messages,max_tokens:Math.min(16384,Math.max(maxTokens,({low:4096,medium:8192,high:16384})[this.reasoning])),reasoning_effort:this.reasoning,temperature:0.2,stream:false,...(tools?{tools,tool_choice:'auto'}:{})}}));
+          const result = extractAnswer(await request(POLL,{signal,timeout:({low:90000,medium:150000,high:210000})[effort],body:{model:'openai',messages,max_tokens:Math.min(16384,Math.max(maxTokens,({low:4096,medium:8192,high:16384})[effort])),reasoning_effort:effort,temperature:0.2,stream:false,...(tools?{tools,tool_choice:'auto'}:{})}}));
+          result.requestedReasoning=effort;
+          if(result.truncated && this.reasoning==='auto'){this.effectiveReasoning='low';this.onStatus('Servern klippte svaret. Automatläge väljer kortare delbeslut och low för nästa anrop. Inga ofullständiga åtgärder körs.');}
           setNext(Date.now()+31000); this.lastModel=result.model; return result;
         } catch (e) {
           const limited = e.freeLimit || e.status === 429;

@@ -23,7 +23,7 @@ calculate räknar. write_file skapar eller ersätter kompletta små textfiler. r
 Spara tidiga delresultat. Skapa samtliga beställda filer innan finish. Vid kritik: rätta FILERNA med write_file, inte bara slutsvaret. Minska inte dokumentens omfång till tomma platshållare. Kontrollera motsägelser och begränsa slutsatsen om fakta inte räcker.
 Använd erbjudna funktioner i första hand. Alternativt ENDAST JSON:
 {"kind":"actions","plan":["kort steg"],"actions":[{"tool":"write_file","args":{"name":"rapport.md","content":"..."}}]}
-eller {"kind":"final","answer":"kort slutsvar"}. Högst 4 verktyg per beslut; kombinera oberoende filoperationer. Inga diffar eller halvfärdig JSON.`;
+eller {"kind":"final","answer":"kort slutsvar"}. Högst 4 verktyg per beslut. Tjänsten kan ha ett svarstak på 1500 token inklusive internt resonemang. Skriv därför EN fil per beslut och högst 150 ord i filen, om användaren inte uttryckligen kräver längre. Dela upp uppdraget i små konkreta arbetssteg. Inga diffar eller halvfärdig JSON.`;
 }
 async function toolAction(space,action,emit,check,signal,origin='agent') {
   check(signal);
@@ -69,7 +69,7 @@ export async function runAgentImpl({question,ai,space,signal,maxSteps=12,review=
     record(space,emit,'ai_start',{role,requestedReasoning:ai.reasoning||'provider-default'});
     try {
       const response=await ai.ask(messages,signal,4096,tools);check(signal);space.lastModel=response.model;
-      record(space,emit,'ai_end',{role,model:response.model,truncated:response.truncated||false,usage:response.usage||null,milliseconds:Date.now()-started});
+      record(space,emit,'ai_end',{role,model:response.model,truncated:response.truncated||false,usage:response.usage||null,requestedReasoning:response.requestedReasoning||ai.effectiveReasoning||ai.reasoning,milliseconds:Date.now()-started});
       return response;
     }catch(e){record(space,emit,'ai_error',{role,name:e.name,message:e.message,status:e.status,milliseconds:Date.now()-started});throw e;}
     finally {space.totalCalls+=Math.max(0,(ai.calls||0)-before);emit('model',{model:ai.lastModel||'',calls:space.totalCalls});}
@@ -90,7 +90,7 @@ export async function runAgentImpl({question,ai,space,signal,maxSteps=12,review=
       const answer=await ask(messages,reviewNext?reviewDefinitions():toolDefinitions(space),reviewNext?'critic':phase);
       let decision;
       try {
-        if(answer.truncated)throw new Error('Svaret klipptes av vid token-gränsen. Inga åtgärder ur det svaret körs.');
+        if(answer.truncated)throw new Error('Svaret klipptes av av tjänsten. Gör endast ETT kort verktygsanrop nästa gång, högst 100 ord filtext. Inga åtgärder ur det avklippta svaret har körts.');
         decision=parseJSON(answer.text);
         if(!reviewNext && !decision.kind && typeof decision.answer==='string')decision.kind='final';
         if(!reviewNext && !['actions','final'].includes(decision.kind))throw new Error('Beslutet saknar giltig kind.');
