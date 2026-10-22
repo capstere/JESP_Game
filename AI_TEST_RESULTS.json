@@ -1,24 +1,9 @@
 {
-  "tests_passed": 18,
-  "kind": "Offline browser regression tests with mocked SDK, origin and transport; NOT live authentication or AI verification",
-  "checks": [
-    "One-click authentication and explicit free model/provider",
-    "Paid-only catalogue blocks all AI calls",
-    "Unknown, malformed or conflicting prices fail closed",
-    "Catalogue failure never uses old model defaults",
-    "Price change is rejected immediately before request",
-    "503 fallback uses another verified free model",
-    "Nested 429 stops instead of exhausting more quota",
-    "402 stops with no paid fallback",
-    "Empty answer is failure, not fake success",
-    "Cancel releases UI even when SDK ignores AbortSignal",
-    "Deadline releases UI for a stuck SDK",
-    "Comparison and judge recheck prices on every call",
-    "Judge failure preserves real individual answers",
-    "Model output is text, not executable HTML",
-    "Test button uses a real-mode request, never SDK test mode",
-    "Blocked authentication has an actionable error",
-    "Conflicting duplicate catalogue entries are blocked",
-    "Mobile layout does not overflow at 390px"
-  ]
+  "version": "4.0",
+  "supersedes": "Puter-based v3 mocked results",
+  "realComponentTestRun": "https://github.com/capstere/JESP_Game/actions/runs/39833414852",
+  "realComponentResults": {"anonymousPollinationsGET": "12", "localQwenInChromium": "12", "wllamaVersion": "3.8.1"},
+  "completeAppResults": "See Real AI browser test workflow logs and artifacts for the exact tested commit. A test of a component is not a test of the full app.",
+  "mockedUITests": 7,
+  "mockedUITestsAreNotLiveAIProof": true
 }
