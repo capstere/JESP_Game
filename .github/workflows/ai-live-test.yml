@@ -31,7 +31,7 @@ jobs:
           cd /tmp/jesp-ai-browser
           npm init -y
           npm install --save-exact playwright@latest
-          npx playwright install --with-deps chromium webkit
+          npx playwright install --with-deps chromium webkit > /tmp/browser-install.log 2>&1 || { tail -80 /tmp/browser-install.log; exit 1; }
       - name: Run actual app with real anonymous API and local model
         env:
           SOURCE_ROOT: ${{ github.workspace }}

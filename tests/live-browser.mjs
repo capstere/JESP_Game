@@ -25,6 +25,8 @@ async function waitDone(page,timeout=150000) {
   return answer;
 }
 for(const [name,browserType] of [['chromium',chromium],['webkit',webkit]]){
+ // Separate fresh browser sessions share this runner IP; honor the service interval.
+ if(results.length) await new Promise(r=>setTimeout(r,32000));
  const browser=await browserType.launch({headless:true});
  try{
   const page=await browser.newPage({viewport:{width:390,height:844}});

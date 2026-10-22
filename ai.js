@@ -3,7 +3,7 @@
 const $ = id => document.getElementById(id);
 const MODEL = 'https://huggingface.co/bartowski/Qwen2.5-0.5B-Instruct-GGUF/resolve/main/Qwen2.5-0.5B-Instruct-Q4_K_M.gguf';
 const CDN = 'https://cdn.jsdelivr.net/npm/@wllama/wllama@3.8.1/esm/';
-let busy = false, controller = null, engine = null, ready = false, text = '', runId = 0;
+let busy = false, controller = null, engine = null, ready = false, text = '', runId = 0, nextOnlineAt = 0;
 window.JESP_AI_BOOTED = true;
 
 function status(message, kind = '') {
@@ -43,19 +43,42 @@ function extractText(data) {
   if (typeof value !== 'string' || !value.trim()) throw new Error('AI-tjänsten returnerade inget läsbart svar.');
   return value.trim();
 }
+function pause(ms, signal) {
+  checkAbort(signal);
+  return new Promise((resolve, reject) => {
+    const finish = () => { signal.removeEventListener('abort', stop); resolve(); };
+    const timer = setTimeout(finish, ms);
+    const stop = () => { clearTimeout(timer); signal.removeEventListener('abort', stop); reject(abortError(signal)); };
+    signal.addEventListener('abort', stop, {once:true});
+  });
+}
 async function onlineAnswer(question, language, budget, signal) {
+  while (Date.now() < nextOnlineAt) {
+    status(`Gratisintervallet: nästa fråga skickas om ${Math.ceil((nextOnlineAt-Date.now())/1000)} s. Du kan avbryta.`);
+    await pause(Math.min(1000, nextOnlineAt-Date.now()), signal);
+  }
+  checkAbort(signal);
   return bounded(async child => {
     status('Frågar Pollinations utan konto eller API-nyckel…');
+    nextOnlineAt = Date.now() + 31000;
     const response = await fetch('https://text.pollinations.ai/openai', {
       method:'POST', credentials:'omit', referrerPolicy:'no-referrer',
       headers:{'Content-Type':'application/json'}, signal:child,
       body:JSON.stringify({model:'openai', messages:[{role:'system',content:systemPrompt(language)},{role:'user',content:question}], max_tokens:budget, temperature:0.4, stream:false})
     });
+    // The anonymous service currently allows one reply per 30 seconds per IP.
+    // Respect this interval instead of bypassing it or switching to a paid API.
+    nextOnlineAt = Date.now() + 31000;
     if (!response.ok) {
-      const detail = (await response.text()).slice(0,500);
-      const err = new Error(`Pollinations HTTP ${response.status}: ${detail}`);
+      const raw = await response.text();
+      const err = new Error(`Pollinations HTTP ${response.status}: ${raw.slice(0,500)}`);
       err.status = response.status;
-      err.retryAfter = response.headers.get('Retry-After');
+      let payload; try { payload = JSON.parse(raw); } catch {}
+      err.freeLimit = payload?.error?.code === 'FREE_LIMIT';
+      const header = response.headers.get('Retry-After');
+      const seconds = header && /^\d+$/.test(header) ? Number(header) : header ? Math.ceil((Date.parse(header)-Date.now())/1000) : Number(raw.match(/Retry after\s+(\d+)s/i)?.[1]);
+      err.retryAfter = Number.isFinite(seconds) && seconds > 0 ? Math.max(31,seconds+1) : 31;
+      if (err.freeLimit || err.status === 429) nextOnlineAt = Date.now() + err.retryAfter*1000;
       throw err;
     }
     const data = await response.json();
@@ -120,6 +143,7 @@ async function localAnswer(question, language, budget, signal, id) {
 function explain(error, mode) {
   if (error.name === 'AbortError') return 'Avbrutet. Inga fler anrop skickas.';
   if (error.name === 'TimeoutError') return 'Tidsgränsen nåddes. Försök med en kortare fråga. Online-tjänsten kan vara upptagen.';
+  if (error.freeLimit) return `Gratisgränsen är ett svar per 30 sekunder och IP-adress. Nästa fråga väntar vid behov ${error.retryAfter} s. Du behöver inte köpa något eller logga in.`;
   if (error.status === 429) return 'Pollinations har nått en trafikgräns. Försök senare eller välj lokalt läge. Appen använder ingen betald reserv.';
   if (error.status === 401 || error.status === 403) return 'Pollinations nekar det anonyma anropet just nu. Ingen inloggning öppnas. Du kan välja lokalt läge i inställningarna.';
   if (error.status >= 500) return 'Pollinations har ett serverfel. Försök senare eller välj lokalt läge.';
