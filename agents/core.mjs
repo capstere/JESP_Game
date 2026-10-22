@@ -47,7 +47,10 @@ export function extractAnswer(data) {
   const choice = data?.choices?.[0];
   let text = choice?.message?.content;
   if (Array.isArray(text)) text = text.filter(p=>p.type === 'text').map(p=>p.text).join('\n');
-  if (typeof text !== 'string' || !text.trim()) throw new Error('AI:n returnerade inget läsbart svar.');
+  if (typeof text !== 'string' || !text.trim()) {
+    const info = {model:data?.model,finish:choice?.finish_reason,fields:Object.keys(choice?.message||{}),usage:data?.usage};
+    throw new Error('AI:n gav inget slutsvar. ' + (choice?.finish_reason === 'length' ? 'Svarstoken tog slut före sluttexten. ' : '') + JSON.stringify(info));
+  }
   return {text:text.trim(), model:String(data.model || 'okänt modellalias'), truncated:choice.finish_reason === 'length'};
 }
 let nextPoll = 0;
@@ -90,7 +93,7 @@ export class AI {
         }
         check(signal); this.onStatus('Frågar Pollinations utan konto…'); this.calls++; setNext(Date.now()+31000);
         try {
-          const result = extractAnswer(await request(POLL,{signal,timeout:90000,body:{model:'openai',messages,max_tokens:maxTokens,temperature:0.2,stream:false}}));
+          const result = extractAnswer(await request(POLL,{signal,timeout:90000,body:{model:'openai',messages,max_tokens:Math.max(maxTokens,4096),reasoning_effort:'low',temperature:0.2,stream:false}}));
           setNext(Date.now()+31000); this.lastModel=result.model; return result;
         } catch (e) {
           const limited = e.freeLimit || e.status === 429;

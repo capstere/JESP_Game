@@ -9,10 +9,11 @@ const mocked=process.env.MOCK_AI==='1';
 const url=process.env.BASE_URL||'http://127.0.0.1:8123/';
 const browser=await chromium.launch({headless:true});
 const page=await browser.newPage({viewport:{width:390,height:844}});
-const requests=[],responses=[],checks=[],errors=[];
+const requests=[],responses=[],checks=[],errors=[],answerMetadata=[];
 page.on('pageerror',e=>errors.push(String(e)));
 page.on('request',r=>{if(/text\.pollinations\.ai|ai-gateway\.kilo\.ai|search\.parallel\.ai|mcp\.exa\.ai/.test(r.url()))requests.push({url:r.url(),at:Date.now(),hasAuth:!!r.headers().authorization,hasCookie:!!r.headers().cookie});});
 page.on('response',r=>{if(/text\.pollinations\.ai|search\.parallel\.ai|mcp\.exa\.ai/.test(r.url()))responses.push({url:r.url(),status:r.status(),at:Date.now()});});
+page.on('response',async r=>{if(!r.url().includes('text.pollinations.ai/openai'))return;try{const d=await r.json();const c=d.choices?.[0];const m={model:d.model,finish:c?.finish_reason,contentLength:c?.message?.content?.length,fields:Object.keys(c?.message||{}),usage:d.usage};answerMetadata.push(m);console.log('AI_RESPONSE_METADATA',JSON.stringify(m));}catch{}});
 function ok(value,label){if(!value)throw new Error(label);checks.push(label);}
 try{
  if(mocked){
@@ -48,11 +49,11 @@ try{
  await page.screenshot({path:path.join(out,mocked?'mock-mobile.png':'live-mobile.png'),fullPage:true});
  await page.setViewportSize({width:1440,height:1000});await page.screenshot({path:path.join(out,mocked?'mock-desktop.png':'live-desktop.png'),fullPage:true});
  ok(errors.length===0,'no uncaught JavaScript errors');
- const evidence={at:new Date().toISOString(),url,mockedAI:mocked,checks,status,answer:await page.locator('#answer').innerText(),model:await page.locator('#answerMeta').innerText(),file,requests,responses};
+ const evidence={at:new Date().toISOString(),url,mockedAI:mocked,checks,status,answer:await page.locator('#answer').innerText(),model:await page.locator('#answerMeta').innerText(),file,requests,responses,answerMetadata};
  writeFileSync(path.join(out,mocked?'mock-results.json':'live-results.json'),JSON.stringify(evidence,null,2));
  console.log('AGENT_TEST_PASSED',JSON.stringify(evidence));
 }catch(error){
  await page.screenshot({path:path.join(out,'failure.png'),fullPage:true}).catch(()=>{});
- const evidence={at:new Date().toISOString(),url,mockedAI:mocked,error:String(error),checks,requests,responses,errors};
+ const evidence={at:new Date().toISOString(),url,mockedAI:mocked,error:String(error),checks,requests,responses,errors,answerMetadata};
  writeFileSync(path.join(out,'failure.json'),JSON.stringify(evidence,null,2));console.error('AGENT_TEST_FAILED',JSON.stringify(evidence));throw error;
 }finally{await browser.close();}
