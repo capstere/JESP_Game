@@ -1,5 +1,8 @@
-name: Published anonymous AI check
+name: JESP agent checks
 on:
+  push:
+    branches: [feat/free-agents-v5]
+    paths: ['agents/**', 'index.html', 'tests/agent-*.mjs', '.github/workflows/ai-online-check.yml']
   workflow_run:
     workflows: [pages build and deployment]
     types: [completed]
@@ -7,13 +10,13 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: published-online-ai
+  group: jesp-agents-${{ github.ref }}
   cancel-in-progress: true
 jobs:
-  published-online-ai:
+  agent-verification:
     if: github.event_name != 'workflow_run' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main')
     runs-on: ubuntu-latest
-    timeout-minutes: 8
+    timeout-minutes: 12
     steps:
       - uses: actions/checkout@v4
         with:
@@ -21,24 +24,35 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Install Chromium only
+      - name: Unit tests
+        run: node --test tests/agent-unit.mjs
+      - name: Install pinned Chromium runner
         run: |
-          mkdir -p /tmp/jesp-online-check
-          cd /tmp/jesp-online-check
+          mkdir -p /tmp/jesp-agent && cd /tmp/jesp-agent
           npm init -y
-          npm install --save-exact playwright@latest
+          npm install --save-exact playwright@1.56.1
           npx playwright install chromium
-      - name: Verify published website with actual anonymous responses
+      - name: Start local test host
+        run: |
+          python3 -m http.server 8123 --bind 127.0.0.1 > /tmp/jesp-host.log 2>&1 &
+          for i in $(seq 1 20); do curl -fsS http://127.0.0.1:8123/ >/dev/null && break; sleep 1; done
+          cp tests/agent-browser.mjs /tmp/jesp-agent/browser.mjs
+      - name: Explicitly mocked browser regression checks
         env:
           SOURCE_ROOT: ${{ github.workspace }}
-        run: |
-          cp tests/live-online-check.mjs /tmp/jesp-online-check/test.mjs
-          cd /tmp/jesp-online-check
-          node test.mjs
+          MOCK_AI: '1'
+          BASE_URL: http://127.0.0.1:8123/
+        run: node /tmp/jesp-agent/browser.mjs
+      - name: Real agent, real anonymous AI, real search, file creation and review
+        env:
+          SOURCE_ROOT: ${{ github.workspace }}
+          MOCK_AI: '0'
+          BASE_URL: ${{ github.event_name == 'workflow_run' && 'https://capstere.github.io/JESP_Game/?agent-check=5.0.0' || 'http://127.0.0.1:8123/' }}
+        run: node /tmp/jesp-agent/browser.mjs
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: published-ai-evidence
-          path: test-artifacts-online/
+          name: agent-browser-evidence
+          path: agent-test-evidence/
           retention-days: 7
           if-no-files-found: warn
