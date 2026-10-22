@@ -2,11 +2,20 @@ name: Real AI browser test
 on:
   push:
     branches: [fix/no-login-ai]
+  workflow_run:
+    workflows: [pages build and deployment]
+    types: [completed]
   workflow_dispatch:
+    inputs:
+      live_url:
+        description: Optional deployed URL; empty stages only the static files
+        type: string
+        required: false
 permissions:
   contents: read
 jobs:
   real-inference:
+    if: github.event_name != 'workflow_run' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main')
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -16,65 +25,26 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Install published inference engine and browser
+      - name: Install real browsers
         run: |
-          mkdir -p /tmp/jesp-ai-test
-          cd /tmp/jesp-ai-test
+          mkdir -p /tmp/jesp-ai-browser
+          cd /tmp/jesp-ai-browser
           npm init -y
-          npm install --save-exact @wllama/wllama@latest playwright@latest
-          cat node_modules/@wllama/wllama/package.json
-          find node_modules/@wllama/wllama -name '*.wasm'
-          npx playwright install --with-deps chromium
-      - name: Check anonymous API availability without credentials
+          npm install --save-exact playwright@latest
+          npx playwright install --with-deps chromium webkit
+      - name: Run actual app with real anonymous API and local model
+        env:
+          SOURCE_ROOT: ${{ github.workspace }}
+          LIVE_URL: ${{ github.event_name == 'workflow_run' && 'https://capstere.github.io/JESP_Game/?v=4.0-live' || inputs.live_url || '' }}
         run: |
-          node --input-type=module <<'JS'
-          const probes=[
-            ['llm7','https://api.llm7.io/v1/chat/completions',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'default',messages:[{role:'user',content:'What is 7 plus 5? Reply only with the number.'}],max_tokens:32})}],
-            ['pollinations','https://text.pollinations.ai/What%20is%207%20plus%205%3F%20Reply%20only%20with%20the%20number.?model=openai',{}]
-          ];
-          for (const [name,url,options] of probes) {
-            try { const r=await fetch(url,{...options,signal:AbortSignal.timeout(20000)}); console.log('ANONYMOUS_PROBE',name,r.status,'CORS',r.headers.get('access-control-allow-origin'),(await r.text()).slice(0,2000)); }
-            catch(e) {console.log('ANONYMOUS_PROBE',name,String(e));}
-          }
-          JS
-      - name: Run real inference without API credentials
-        run: |
-          cd /tmp/jesp-ai-test
-          cat > index.html <<'HTML'
-          <!doctype html><html><body><script type="module">
-          import {Wllama} from './node_modules/@wllama/wllama/esm/index.js';
-          window.Wllama = Wllama;
-          </script></body></html>
-          HTML
-          python3 -m http.server 8765 --bind 127.0.0.1 > /tmp/ai-http.log 2>&1 &
-          cat > test.mjs <<'JS'
-          import { chromium } from 'playwright';
-          import { readFileSync } from 'node:fs';
-          const version=JSON.parse(readFileSync('./node_modules/@wllama/wllama/package.json','utf8')).version;
-          console.log('TESTED_ENGINE_VERSION',version);
-          const browser=await chromium.launch({headless:true});
-          try {
-            const page=await browser.newPage();
-            page.on('console',m=>console.log('BROWSER',m.type(),m.text().slice(0,1500)));
-            page.on('pageerror',e=>console.log('PAGE ERROR',String(e)));
-            await page.goto('http://127.0.0.1:8765/');
-            await page.waitForFunction(()=>!!window.Wllama);
-            const result=await page.evaluate(async(version)=>{
-              const v2=Number(version.split('.')[0])<3;
-              const base='./node_modules/@wllama/wllama/esm/';
-              const config=v2?{'single-thread/wllama.wasm':base+'single-thread/wllama.wasm','multi-thread/wllama.wasm':base+'multi-thread/wllama.wasm'}:{default:base+'wasm/wllama.wasm'};
-              const engine=new window.Wllama(config);
-              let last=-1;
-              await engine.loadModelFromUrl('https://huggingface.co/bartowski/Qwen2.5-0.5B-Instruct-GGUF/resolve/main/Qwen2.5-0.5B-Instruct-Q4_K_M.gguf',{n_ctx:2048,n_parallel:1,n_threads:1,n_batch:128,n_gpu_layers:0,progressCallback:p=>{const pct=Math.floor(100*p.loaded/p.total);if(pct>=last+10){console.log('DOWNLOAD',pct);last=pct;}}});
-              const messages=[{role:'user',content:'What is 7 plus 5? Reply with only the number.'}];
-              const response=v2?await engine.createChatCompletion(messages,{nPredict:32,sampling:{temp:0}}):await engine.createChatCompletion({messages,max_tokens:32,temperature:0,stream:false});
-              await engine.exit();
-              return response;
-            },version);
-            console.log('REAL_INFERENCE_RESULT',JSON.stringify(result));
-            const text=typeof result==='string'?result:result.choices?.[0]?.message?.content;
-            if (!/\b12\b/.test(text||'')) throw new Error('Expected real arithmetic answer 12');
-            console.log('PASS: actual downloaded model generated 12 in browser; no API login or key');
-          } finally { await browser.close(); }
-          JS
-          node test.mjs
+          cp tests/live-browser.mjs /tmp/jesp-ai-browser/live-browser.mjs
+          cd /tmp/jesp-ai-browser
+          node live-browser.mjs
+      - name: Save browser evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: real-ai-browser-results
+          path: test-artifacts/
+          if-no-files-found: warn
+          retention-days: 7
