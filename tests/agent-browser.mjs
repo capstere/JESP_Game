@@ -13,7 +13,7 @@ const requests=[],responses=[],checks=[],errors=[],answerMetadata=[];
 page.on('pageerror',e=>errors.push(String(e)));
 page.on('request',r=>{if(/text\.pollinations\.ai|ai-gateway\.kilo\.ai|search\.parallel\.ai|mcp\.exa\.ai/.test(r.url()))requests.push({url:r.url(),at:Date.now(),hasAuth:!!r.headers().authorization,hasCookie:!!r.headers().cookie});});
 page.on('response',r=>{if(/text\.pollinations\.ai|search\.parallel\.ai|mcp\.exa\.ai/.test(r.url()))responses.push({url:r.url(),status:r.status(),at:Date.now()});});
-page.on('response',async r=>{if(!r.url().includes('text.pollinations.ai/openai'))return;try{const d=await r.json();const c=d.choices?.[0];const m={model:d.model,finish:c?.finish_reason,contentLength:c?.message?.content?.length,fields:Object.keys(c?.message||{}),usage:d.usage};answerMetadata.push(m);console.log('AI_RESPONSE_METADATA',JSON.stringify(m));}catch{}});
+page.on('response',async r=>{if(!r.url().includes('text.pollinations.ai/openai'))return;try{const d=await r.json();const c=d.choices?.[0];const m={model:d.model,finish:c?.finish_reason,contentLength:c?.message?.content?.length,fields:Object.keys(c?.message||{}),usage:d.usage,tools:c?.message?.tool_calls?.map(t=>({name:t.function?.name,arguments:String(t.function?.arguments||'').slice(0,500)}))};answerMetadata.push(m);console.log('AI_RESPONSE_METADATA',JSON.stringify(m));}catch{}});
 function ok(value,label){if(!value)throw new Error(label);checks.push(label);}
 try{
  if(mocked){
@@ -31,6 +31,7 @@ try{
  if(mocked){await page.locator('#settings summary').click();await page.click('#checkKilo');await page.waitForFunction(()=>!document.getElementById('kiloOption').disabled);await page.selectOption('#provider','kilo');}
  const assignment=mocked?'Räkna (125*8)-175 med calculate och skriv resultat.json. Inspektera filen.':
  'Utför med verktygen: 1. Sök efter officiell WebAssembly-dokumentation och läs en relevant källsida. 2. Räkna (125*8)-175 med calculate. 3. Skapa resultat.json med fälten expression, result (tal) och source (en URL du faktiskt läst). 4. Kontrollera JSON-syntax med inspect_file. Avsluta med en kort svensk sammanfattning. Håll JSON-besluten korta. Filer skapas med write_file, inte bara i svaret.';
+ if(!mocked){await page.locator('#settings summary').click();await page.selectOption('#steps','8');}
  await page.fill('#prompt',assignment);await page.click('#run');
  await page.waitForFunction(()=>!document.getElementById('run').disabled,{}, {timeout:420000});
  const status=await page.locator('#status').innerText();const log=await page.locator('#log').innerText();
