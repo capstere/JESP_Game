@@ -1,0 +1,23 @@
+name: Backend v6 independently checked reasoning
+on:
+  push:
+    branches: [feat/backend-v6]
+    paths: [.github/workflows/backend-reasoning-v6.yml, tests/backend-reasoning-v6.mjs]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node tests/backend-reasoning-v6.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: backend-v6-reasoning
+          path: reasoning-v6-evidence/
