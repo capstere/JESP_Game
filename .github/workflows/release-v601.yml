@@ -1,0 +1,81 @@
+name: V6.0.1 real release acceptance
+on:
+  push:
+    branches: [feat/backend-v6]
+    paths: [.github/workflows/release-v601.yml, tools/prepare_release_v601.py, agents/final-review.mjs, tests/final-review-v601.mjs]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: jesp-release-v601
+  cancel-in-progress: false
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    permissions:
+      contents: write
+    outputs:
+      sha: ${{ steps.commit.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/backend-v6
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: |
+          python3 tools/prepare_release_v601.py
+          node --test tests/agent-unit.mjs tests/reasoning-v51.mjs tests/cap-v51.mjs tests/progress-v511.mjs tests/quality-v52.mjs tests/snapshot-v52.mjs tests/protocol-recovery-v52.mjs tests/backend-v6.mjs tests/backend-hardening-v6.mjs tests/backend-escalation-v6.mjs tests/backend-budget-v6.mjs tests/backend-argument-guard-v6.mjs tests/final-review-v601.mjs
+      - id: commit
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add agents index.html tests/agent-optimization-v6.mjs tests/backend-live-v6.mjs .github/workflows/agent-regression.yml AI_TEST_RESULTS.json
+          if ! git diff --cached --quiet; then git commit -m 'Require evidence-backed final explanation and retain computation proofs [skip ci]'; git push origin HEAD:feat/backend-v6; fi
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+  live:
+    needs: prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 24
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: |
+          mkdir -p release-evidence
+          git rev-parse HEAD > release-evidence/candidate-commit.txt
+          git archive --format=tar HEAD agents backend tests tools index.html chat.html ai.js README_AI.md AI_TEST_RESULTS.json .github > release-evidence/source.tar
+          npm install --no-save --package-lock=false playwright@1.56.1
+          npx playwright install chromium
+      - name: Real optimization agent, unseen solver checks and final explanation
+        id: optimization
+        run: node tests/agent-optimization-v6.mjs
+      - name: Real FPS build and independent gameplay checks
+        id: fps
+        if: ${{ !cancelled() }}
+        run: node tests/backend-hardened-live-v6.mjs
+      - name: Record actual outcomes
+        if: always()
+        env:
+          OPTIMIZATION: ${{ steps.optimization.outcome }}
+          FPS: ${{ steps.fps.outcome }}
+        run: |
+          python3 - <<'PY'
+          import json,os,subprocess
+          from pathlib import Path
+          Path('release-evidence/outcomes.json').write_text(json.dumps({'candidate':subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),'mockedAI':False,'optimization':os.environ['OPTIMIZATION'],'fps':os.environ['FPS']},indent=2))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: v601-real-acceptance
+          path: |
+            release-evidence/
+            optimization-agent-evidence/
+            backend-hardened-evidence/
+          retention-days: 14
