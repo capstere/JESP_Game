@@ -1,3 +1,4 @@
+import {normalizeToolArguments} from './arguments.mjs?v=6.0.1';
 import {finalAnswerIssues} from './final-review.mjs?v=6.0.1';
 import {backendToolDefinitions,taskKind,normalizeStrategy,strategyDefinitions,advancedPrompt,editingDefinitions,qualityIssues,reviewCheckIssues} from './quality.mjs?v=6.0.1';
 import {toolDefinitions,reviewDefinitions} from './protocol.mjs?v=5.1.1';
@@ -43,18 +44,19 @@ async function toolAction(space,action,emit,check,signal,origin='agent') {
   check(signal);
   const requestedTool=typeof action?.tool==='string'?action.tool:'okänt';
   const tool=requestedTool==='test_files'?'test_js':requestedTool;
-  const args=action?.args||{};
+  let args=action?.args||{};let argumentNormalization=[];
   emit('action',{tool,args});
   const started=Date.now();let result;
   try {
     if(action.argumentError)throw new Error(action.argumentError);
+    const normalized=normalizeToolArguments(requestedTool,args);args=normalized.args;argumentNormalization=normalized.changes;
     const missing=remainingFiles(space);
     const failedCheck=space.audit.some(e=>['inspect_file','test_js'].includes(e.tool) && (e.args?.name===args.name||e.data?.file===args.name) && (!e.ok||e.data?.passed===false));
     const repairRequested=space.reviews.at(-1)?.verdict==='revise';
     if(!space.advanced && tool==='write_file' && space.files.has(args.name) && missing.length && !failedCheck && !repairRequested)throw new Error('Filen '+args.name+' finns redan. Nästa obligatoriska leverans är '+missing[0]+'. Skapa de saknade filerna innan du skriver om en befintlig fil.');
     result={ok:true,data:await space.tool(tool,args)};
   }catch(e){check(signal);result={ok:false,error:e.message||String(e)};}
-  const event={id:'T'+(space.audit.length+1),tool,args,...result,milliseconds:Date.now()-started,origin,time:new Date().toISOString()};
+  const event={id:'T'+(space.audit.length+1),tool,args,...(argumentNormalization.length?{argumentNormalization}:{}),...result,milliseconds:Date.now()-started,origin,time:new Date().toISOString()};
   space.audit.push(event);emit('observation',event);
   if(space.backend&&space.advanced&&tool==='test_js'){
     // A successful HTTP/tool dispatch is NOT a passed code test.
@@ -153,11 +155,12 @@ export async function runAgentImpl({question,ai,space,signal,maxSteps=12,review=
       }
       if(reviewNext) {
         const issues=Array.isArray(decision.issues)?decision.issues.filter(x=>typeof x==='string').slice(0,12):[];
-        const candidate=space.backend&&space.advanced&&typeof decision.final_answer==='string'?decision.final_answer:draft;
+        // A critic must not introduce a new, unchecked explanation while approving it.
+        const candidate=draft;
         const gates=gatesFor(candidate);
         if(!['pass','revise'].includes(decision.verdict)||typeof decision.answer!=='string')issues.push('Granskningen saknar giltigt beslut; gör om kontrollen.');
         if(decision.verdict==='revise' && !issues.length)issues.push('Granskaren begär rättning utan specifikation; kontrollera leveranser mot uppdraget.');
-        space.pendingIssues=[...new Set([...gates,...issues,...reviewCheckIssues(decision,space),...finalAnswerIssues(decision,space)])];reviewed=true;
+        space.pendingIssues=[...new Set([...gates,...issues,...reviewCheckIssues(decision,space),...finalAnswerIssues(decision,space,draft)])];reviewed=true;
         const report={time:new Date().toISOString(),verdict:decision.verdict||'invalid',answer:String(decision.answer||''),issues:space.pendingIssues,checks:decision.checks||[],answer_check:decision.answer_check||null,final_answer:decision.final_answer||null,model:answer.model,versions:[...space.files.values()].map(f=>({name:f.name,version:f.version}))};
         space.reviews.push(report);emit('review',report);record(space,emit,'review',{verdict:report.verdict,issues:report.issues});
         if(decision.verdict==='pass'&&!space.pendingIssues.length){draft=candidate;space.draft=draft;reviewPassed=true;finished=true;stopReason='complete';record(space,emit,'answer_review',{status:'pass',check:decision.answer_check||null});break;}

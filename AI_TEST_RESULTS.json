@@ -3,7 +3,7 @@
   "date": "2026-10-23",
   "model_weights_changed": false,
   "deterministic_tests": {
-    "passed": 163,
+    "passed": 174,
     "model_responses": "simulated where required"
   },
   "historical_live_acceptance": {
@@ -11,8 +11,14 @@
     "checks": 28,
     "result": "passed for code; final prose comparison was wrong and now has a dedicated review gate"
   },
-  "current_live_acceptance": "See release-v601 workflow artifact. A passing test is required before merge; the existence of test code is not evidence of success.",
+  "current_live_acceptance": "See release-v601 matrix artifacts after the observed fixes. Do not infer a live pass from regression tests.",
   "no_login": true,
   "paid_fallback": false,
-  "unlimited_capacity_claimed": false
+  "unlimited_capacity_claimed": false,
+  "prior_v601_acceptance": {
+    "run_id": 40025348227,
+    "result": "failed",
+    "optimization": "Correct computed solutions but tester assumed a different JSON shape; critic also introduced extra unverified prose.",
+    "fps": "Initial-target shot failed and code-test argument encoding consumed the decision budget."
+  }
 }

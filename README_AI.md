@@ -12,7 +12,7 @@ Auto begär 3 072 token för uppdragsanalys, 6 144 för arbetssteg och 8 192 fö
 
 ## Rättningen i 6.0.1
 
-Ett tidigare liveprov skapade korrekt optimeringskod men skrev ett felaktigt jämförelsevärde i slutsvaret. Nu bevaras beräknings- och testloggar även efter slutlig filåterläsning. Granskaren måste kontrollera slutsvaret separat (`answer_check`) och lämna ett `final_answer`. Ett generiskt godkännande av kodfilerna räcker inte. Bara det granskade slutsvaret visas vid godkänt avslut. Felaktiga eller föråldrade evidensreferenser blockerar godkännande. Detta förbättrar kontrollen men är inte en matematisk verifiering av godtycklig AI-prosa.
+Ett tidigare liveprov skapade korrekt optimeringskod men skrev ett felaktigt jämförelsevärde i slutsvaret. Nu bevaras beräknings- och testloggar även efter slutlig filåterläsning. Granskaren måste kontrollera slutsvaret separat (`answer_check`) och kontrollera exakt det befintliga utkastet. Ett generiskt godkännande av kodfilerna räcker inte. Bara det granskade arbetarutkastet visas vid godkänt avslut. Kritikern får inte införa en ny omskrivning med nya, okontrollerade uppgifter. Felaktiga eller föråldrade evidensreferenser blockerar godkännande. Detta förbättrar kontrollen men är inte en matematisk verifiering av godtycklig AI-prosa.
 
 ## Verktyg och behörigheter
 
@@ -33,3 +33,7 @@ Regressionssviten testar programlogik och använder simulerad AI där det behöv
 `tests/backend-hardened-live-v6.mjs`: agenten bygger en minimal FPS-prototyp. Separat browser verifierar rörelse, rotation, skott/poäng, återställning och icke-tom canvas. Modellgenererad kod körs aldrig med GitHub-token eller som ett Node-program på runnern; externa nätverksanrop blockeras i testbrowsern.
 
 Aktuella utfall finns i GitHub Actions-artefakterna och `AI_TEST_RESULTS.json`. Ett grönt regressionstest är inte ett godkänt liveprov. Ett godkänt optimerings- eller spelprov bevisar den testade uppgiften, inte obegränsad kapacitet eller generell felfri intelligens.
+
+## Observerade rättningar före merge
+
+Det första skärpta provet räknade korrekt men använde {optimal, baseline} i JSON medan testaren antog en platt rot. Testaren accepterar nu båda entydiga representationerna men kräver samma numeriska resultat och samma 28 separata kodkontroller. Spelprovet missade träffbarhet från start och fastnade i dubbelt JSON-kodade filnamnslistor. Endast en strikt JSON-array av filnamn kan nu normaliseras; detta loggas och ändrar inte behörighet, filnamnskontroll eller sandbox. Krav på startläge och kombinerade kantfall ska bevaras i kriterier och faktiska tester. Ett nytt liveprov krävs efter dessa ändringar.
