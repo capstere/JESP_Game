@@ -1,0 +1,39 @@
+name: Backend v6 observed argument crash regression and real acceptance
+on:
+  push:
+    branches: [feat/backend-v6]
+    paths: [.github/workflows/agent-guard-v6.yml, tools/guard_backend_v6.py]
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/backend-v6
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Correct actual malformed-argument crash without executing malformed actions
+        run: |
+          python3 tools/guard_backend_v6.py
+          node --test tests/agent-unit.mjs tests/reasoning-v51.mjs tests/cap-v51.mjs tests/progress-v511.mjs tests/quality-v52.mjs tests/snapshot-v52.mjs tests/protocol-recovery-v52.mjs tests/backend-v6.mjs tests/backend-hardening-v6.mjs tests/backend-escalation-v6.mjs tests/backend-budget-v6.mjs tests/backend-argument-guard-v6.mjs
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add agents/runner.mjs agents/app.mjs
+          if ! git diff --cached --quiet; then git commit -m 'Handle malformed model arguments without crashing error reporting [skip ci]'; git push origin HEAD:feat/backend-v6; fi
+          mkdir -p optimization-agent-evidence
+          git rev-parse HEAD > optimization-agent-evidence/candidate-commit.txt
+      - run: |
+          npm install --no-save --package-lock=false playwright@1.56.1
+          npx playwright install chromium
+      - name: Repeat unchanged real agent task and 28 independent solver checks
+        run: node tests/agent-optimization-v6.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: optimization-agent-v6-guarded
+          path: optimization-agent-evidence/
