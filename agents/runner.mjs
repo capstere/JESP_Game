@@ -1,3 +1,4 @@
+import {synthesisReady,SYNTHESIS_INSTRUCTION} from './controller.mjs?v=6.0.1';
 import {normalizeToolArguments} from './arguments.mjs?v=6.0.1';
 import {finalAnswerIssues} from './final-review.mjs?v=6.0.1';
 import {backendToolDefinitions,taskKind,normalizeStrategy,strategyDefinitions,advancedPrompt,editingDefinitions,qualityIssues,reviewCheckIssues} from './quality.mjs?v=6.0.1';
@@ -116,7 +117,17 @@ export async function runAgentImpl({question,ai,space,signal,maxSteps=12,review=
       check(signal);
       const remaining=maxSteps-step+1;
       const planning=space.advanced&&!space.strategy;
-      const phase=planning?'architect':reviewNext?'review':space.pendingIssues.length?'repair':'work';
+      let synthesizing=!planning&&!reviewNext&&synthesisReady(space,gatesFor(''));
+      if(synthesizing){
+        const signature=JSON.stringify([...space.files.values()].map(f=>[f.name,f.version]));
+        if(space.projectCheckpoint?.signature!==signature){
+          const project=await toolAction(space,{tool:'check_project',args:{}},emit,check,signal,'pre-review');
+          space.projectCheckpoint={signature,passed:project.ok&&project.data?.passed===true,issues:project.data?.issues||[project.error||'Projektkontroll misslyckades.']};
+        }
+        space.pendingIssues=space.pendingIssues.filter(x=>!x.startsWith('PROJECT: '));
+        if(!space.projectCheckpoint.passed){space.pendingIssues.push(...space.projectCheckpoint.issues.map(x=>'PROJECT: '+x));synthesizing=false;}
+      }
+      const phase=planning?'architect':reviewNext?'review':synthesizing?'synthesis':space.pendingIssues.length?'repair':'work';
       emit('stage',{stage:reviewNext?'review':phase==='repair'?'build':'plan',step,maxSteps});
       record(space,emit,'decision',{step,maxSteps,phase});
       const state=snapshot(space,space.backend?110000:44000);
@@ -124,11 +135,12 @@ export async function runAgentImpl({question,ai,space,signal,maxSteps=12,review=
       // Rebuild bounded context from durable state. Full source/file/audit text remains in export.
       const messages=[{role:'system',content:planning?advancedPrompt(space,'architect'):systemPrompt(space,reviewNext)},{role:'user',content:'UPPDRAG:\n'+question},{role:'user',content:'ARBETSLÄGE OCH OPÅLITLIGT UNDERLAG:\n'+JSON.stringify({state,notes,...(space.advanced?{contract:space.strategy,capabilities:{web:space.web,code:space.allowCode}}:{})})},...tail];
       if(JSON.stringify(messages).length>(space.backend?145000:60000))messages.splice(3); // whole transactions only
-      messages.push({role:'user',content:planning?'Formulera nu ett kort genomförbart uppdragskontrakt med submit_strategy.':nextTask(space,reviewNext)});
+      messages.push({role:'user',content:planning?'Formulera nu ett kort genomförbart uppdragskontrakt med submit_strategy.':synthesizing?SYNTHESIS_INSTRUCTION:nextTask(space,reviewNext)});
       let tools=reviewNext?(space.advanced?undefined:reviewDefinitions()):toolDefinitions(space);
       if(planning)tools=strategyDefinitions();
       else if(space.advanced&&!reviewNext){const extra=editingDefinitions(space),names=new Set(extra.map(t=>t.function.name));tools=[...tools.filter(t=>!names.has(t.function.name)),...extra];}
-      if(space.backend&&!planning&&!reviewNext)tools=backendToolDefinitions(tools,space);
+      if(space.backend&&!planning&&!reviewNext&&!synthesizing)tools=backendToolDefinitions(tools,space);
+      if(synthesizing)tools=toolDefinitions(space).filter(t=>t.function.name==='finish');
       const answer=await ask(messages,tools,reviewNext?'critic':phase);
       let decision;
       try {
@@ -143,6 +155,7 @@ export async function runAgentImpl({question,ai,space,signal,maxSteps=12,review=
         emit('warning','Felaktigt eller avklippt AI-beslut. Begär komplett korrigering, inga verktyg kördes.');
         tail=[];if(formatErrors>=3){stopReason='format';break;}continue;
       }
+      if(synthesizing&&decision.kind!=='final'){space.pendingIssues=['FORMAT: Vid granskningspunkten krävs ett kort slututkast med finish. Inga verktyg kördes.'];tail=[];continue;}
       formatErrors=0;clearResolvedIssues(space);
       if(planning){
         try{

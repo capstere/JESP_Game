@@ -22,7 +22,7 @@ test('failed executable test invokes repair role and successful current-version 
  const replies=[actions([{tool:'test_files',args:{files:['logic.js'],code:'assert(sum(1,2)===3)'}}]),actions([{tool:'write_file',args:{name:'logic.js',content:'// A sufficiently long fixture module for the build gate\nfunction sum(a,b){return a+b;}\nglobalThis.sum=sum;'}},{tool:'test_files',args:{files:['logic.js'],code:'assert(sum(1,2)===3)'}}]),{kind:'final',answer:'Fixed and tested.'}];
  const ai={provider:'backend',calls:0,async ask(){roles.push(this.role);this.calls++;return {text:JSON.stringify(replies.shift()),model:'fixture'};}};
  const result=await runAgent({question:'Skapa logic.js',space:w,ai,signal:signal(),advanced:true,review:false,maxSteps:4,mode:'build'});
- assert.equal(result.unfinished,false);assert.deepEqual(roles,['work','repair','work']);
+ assert.equal(result.unfinished,false);assert.deepEqual(roles,['work','repair','synthesis']);
  assert.ok(w.trace.some(x=>x.type==='repair_required'&&x.error==='window is not defined'));
  assert.equal(w.files.get('logic.js').version,2);assert.ok(!w.pendingIssues.some(x=>x.startsWith('TEST:')));
  assert.equal(w.audit.filter(x=>x.tool==='test_js').length,2);

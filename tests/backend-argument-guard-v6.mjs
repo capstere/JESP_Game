@@ -9,5 +9,5 @@ for(const malformed of ["['solver.js']",{},5,null])test('invalid files argument 
  const roles=[],replies=[{kind:'actions',actions:[{tool:'test_files',args:{files:malformed,code:'assert(f()===42)'}}]},{kind:'actions',actions:[{tool:'test_files',args:{files:['solver.js'],code:'assert(f()===42)'}}]},{kind:'final',answer:'Tested.'}];
  const ai={provider:'backend',calls:0,async ask(){roles.push(this.role);this.calls++;return {model:'fixture',text:JSON.stringify(replies.shift())};}};
  const result=await runAgent({question:'Skapa solver.js',space:w,ai,signal:signal(),advanced:true,review:false,mode:'build',maxSteps:4});
- assert.equal(result.unfinished,false);assert.equal(executions,1);assert.deepEqual(roles,['work','repair','work']);assert.equal(w.audit[0].ok,false);assert.equal(w.lastError,null);
+ assert.equal(result.unfinished,false);assert.equal(executions,1);assert.deepEqual(roles,['work','repair','synthesis']);assert.equal(w.audit[0].ok,false);assert.equal(w.lastError,null);
 });

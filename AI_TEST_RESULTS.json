@@ -3,7 +3,7 @@
   "date": "2026-10-23",
   "model_weights_changed": false,
   "deterministic_tests": {
-    "passed": 174,
+    "passed": 188,
     "model_responses": "simulated where required"
   },
   "historical_live_acceptance": {
@@ -11,7 +11,7 @@
     "checks": 28,
     "result": "passed for code; final prose comparison was wrong and now has a dedicated review gate"
   },
-  "current_live_acceptance": "See release-v601 matrix artifacts after the observed fixes. Do not infer a live pass from regression tests.",
+  "current_live_acceptance": "See latest release-v601 artifacts; real outcomes remain pending until completed.",
   "no_login": true,
   "paid_fallback": false,
   "unlimited_capacity_claimed": false,
@@ -20,5 +20,10 @@
     "result": "failed",
     "optimization": "Correct computed solutions but tester assumed a different JSON shape; critic also introduced extra unverified prose.",
     "fps": "Initial-target shot failed and code-test argument encoding consumed the decision budget."
+  },
+  "prior_v601_attempt2": {
+    "run_id": 40028192842,
+    "result": "failed",
+    "detail": "Worker truncation incorrectly reduced reflective effort for all later roles. Both tasks exhausted their budget in repeated tests; FPS also had a script declaration collision and missing window references."
   }
 }

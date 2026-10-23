@@ -1,3 +1,5 @@
+import {ASSERT_HARNESS} from './test-harness.mjs?v=6.0.1';
+import {failureDiagnostics,crossScriptSyntax} from './diagnostics.mjs?v=6.0.1';
 import {Workspace as BaseWorkspace,filename,check} from './runtime.mjs?v=5.1.1';
 import {projectCheck} from './quality.mjs?v=6.0.1';
 export class Workspace extends BaseWorkspace {
@@ -5,7 +7,13 @@ export class Workspace extends BaseWorkspace {
     check(this.signal);
     if(!args||typeof args!=='object'||Array.isArray(args))throw new Error('Verktygsargument måste vara ett objekt.');
     if(name==='list_files')return {files:[...this.files.values()].map(({name,version,bytes,content})=>({name,version,bytes,lines:content.split('\n').length}))};
-    if(name==='check_project')return projectCheck(this);
+    if(name==='check_project'){
+      const base=projectCheck(this);
+      if(!base.passed||!this.backend||!this.allowCode||!this.execute)return base;
+      const syntax=await crossScriptSyntax(this,this.signal);
+      const syntaxIssues=syntax.performed?syntax.checks.filter(c=>!c.passed).map(c=>'Klassiska scripts i '+c.page+': '+c.error):[];
+      return {...base,passed:base.passed&&!syntaxIssues.length,issues:[...base.issues,...syntaxIssues],syntax};
+    }
     if(['append_file','edit_file'].includes(name)) {
       const file=this.files.get(filename(args.name));if(!file)throw new Error('Filen finns inte.');
       if(!Number.isInteger(args.expected_version)||args.expected_version!==file.version)throw new Error('Versionskonflikt. Läs '+file.name+' igen. Aktuell version: '+file.version);
@@ -34,10 +42,10 @@ export class Workspace extends BaseWorkspace {
       const source=files.map(f=>f.content).join('\n;\n');
       const body=source+'\n;\n'+args.code;
       if(body.length>29000)throw new Error('Högst 29 000 tecken kod/test; testa en mindre modul.');
-      const harness='let __jesp_assertions=0;const assert=(ok,message="Assertion failed")=>{__jesp_assertions++;if(!ok)throw new Error(message);};\n'+body+'\n;return {assertions:__jesp_assertions};';
+      const harness=ASSERT_HARNESS+body+'\n;return {assertions:__jesp_assertions};';
       const result=await this.execute(harness,this.signal);
       let count=Number(result.value?.assertions??0);if(typeof result.value==='string')try{count=Number(JSON.parse(result.value).assertions||0);}catch{}
-      return {...result,assertions:Number.isFinite(count)?count:0,versions:files.map(f=>({name:f.name,version:f.version})),...(files.length===1?{file:files[0].name,version:files[0].version}:{})};
+      return {...result,...(result.passed!==true?{diagnostics:failureDiagnostics(files,args.code,result.error)}:{}),assertions:Number.isFinite(count)?count:0,versions:files.map(f=>({name:f.name,version:f.version})),...(files.length===1?{file:files[0].name,version:files[0].version}:{})};
     }
     return super.tool(name,args);
   }

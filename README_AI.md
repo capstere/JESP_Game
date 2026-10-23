@@ -37,3 +37,7 @@ Aktuella utfall finns i GitHub Actions-artefakterna och `AI_TEST_RESULTS.json`. 
 ## Observerade rättningar före merge
 
 Det första skärpta provet räknade korrekt men använde {optimal, baseline} i JSON medan testaren antog en platt rot. Testaren accepterar nu båda entydiga representationerna men kräver samma numeriska resultat och samma 28 separata kodkontroller. Spelprovet missade träffbarhet från start och fastnade i dubbelt JSON-kodade filnamnslistor. Endast en strikt JSON-array av filnamn kan nu normaliseras; detta loggas och ändrar inte behörighet, filnamnskontroll eller sandbox. Krav på startläge och kombinerade kantfall ska bevaras i kriterier och faktiska tester. Ett nytt liveprov krävs efter dessa ändringar.
+
+## Diagnostik och styrning
+
+Avklippning sänker nu bara den berörda rollens/modellets nästa automatiska resonemangsinställning, inte alla andra roller. Felsökning och kritik behåller sin reflektionsbudget. Saknade identifierare i kodtester får radangivna källledtrådar. Flera klassiska scriptfiler kan syntaxkompileras tillsammans i den befintliga godkända sandboxen för att hitta deklarationskollisioner, utan att anropa programmet. Detta är inte ett DOM-test. Assertionverktyget har även equal, deepEqual och throws för begränsade JSON-liknande testdata. När filer och grundkontroller finns skickar styrningen uppdraget till ett konkret kandidatsvar och därefter separat kritik, inte en oändlig serie identiska tester. Kritiken kan fortfarande underkänna och begära mer arbete.
