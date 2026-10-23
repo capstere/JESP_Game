@@ -1,10 +1,10 @@
 // Validate evidence for the final explanation as well as generated artifacts.
 // This validates traceability, not the semantic truth of arbitrary model prose.
 import {reviewCheckIssues as artifactReview} from './goal-contract.mjs?v=5.2.0';
-export function finalAnswerIssues(decision,space){
+export function finalAnswerIssues(decision,space,draft=space.draft){
  if(!space.backend||!space.advanced)return [];
  const issues=[];
- if(typeof decision.final_answer!=='string'||!decision.final_answer.trim()||decision.final_answer.length>12000)issues.push('Slutgranskningen saknar ett komplett final_answer (1–12000 tecken).');
+ if(typeof draft!=='string'||!draft.trim()||draft.length>12000)issues.push('Slutgranskningen saknar ett komplett användarsvar (1–12000 tecken).');
  const check=decision.answer_check;
  if(!check||typeof check!=='object'||Array.isArray(check))return [...issues,'Slutsvarets fakta och jämförelser saknar separat answer_check.'];
  const scope={...space,strategy:{criteria:[{id:'ANSWER',requirement:'Slutsvarets fakta, siffror och jämförelsemetoder följer av faktiskt underlag.'}]}};
@@ -30,8 +30,7 @@ export function computationEvidence(space,cap=2000){
 export const FINAL_REVIEW_PROMPT=`
 SLUTSVARET ÄR EN EGEN LEVERANS. Granska även notes.draft, inte bara kodfiler och C-kriterier. Kontrollera alla konkreta siffror, jämförelser och motexempel mot computationEvidence och aktuella filer. En jämförelsealgoritms resultat måste vara beräknat med dess faktiska regel, inte ett godtyckligt sämre alternativ. Om sådant underlag saknas eller motsäger svaret: begär revise med en konkret beräkning/test som arbetsagenten ska utföra. Introducera inte nya, obestyrkta resultat när du sammanfattar.
 Returnera utöver verdict, answer, issues, checks också:
-"answer_check":{"status":"pass|fail|unknown","evidence":["tool:T3" eller "file:resultat.json@v1" eller "source:S1"],"finding":"saklig kontroll av slutsvaret och dess jämförelser"},
-"final_answer":"Det slutliga användarsvaret på användarens språk, grundat i kontrollerade resultat; säg konkret vad som inte testats."
-Pass kräver både godkända C-kriterier och godkänd answer_check. Enbart återläsning av en fil bevisar inte en numerisk slutsats. Vid sakfel: revise, inte godkänn. Vid pass visas final_answer, inte det ogranskade utkastet.`;
+"answer_check":{"status":"pass|fail|unknown","evidence":["tool:T3" eller "file:resultat.json@v1" eller "source:S1"],"finding":"saklig kontroll av slutsvaret och dess jämförelser"}
+Pass kräver både godkända C-kriterier och godkänd answer_check. Granska EXAKT notes.draft. Vid sakfel: revise med konkret rättning till arbetaren. Skriv inte ett nytt alternativt slutsvar vid godkännande: användaren får det granskade arbetarutkastet, inte en ny omskrivning. Lägg inte till uträkningar, rangordningar eller generaliseringar som inte kontrollerats. Enbart återläsning av en fil bevisar inte en numerisk slutsats.`;
 export const CALCULATION_PROMPT=`
 När slutsvaret innehåller ett numeriskt resultat, en jämförelsemetod eller ett motexempel: beräkna det med calculate eller test_files och logga den faktiska lösningen med console.log(JSON.stringify(...)). Förlita dig inte på en gissad jämförelsesiffra. Förklara vad testet faktiskt visar och undvik nya sakpåståenden i finish som inte finns i underlaget. Arbetsytan bevarar dessa beräkningsbevis även efter filåterläsning.`;
