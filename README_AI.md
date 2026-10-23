@@ -1,37 +1,39 @@
-# JESP AI 5.1.1 — granska, rätta, kontrollera
+# JESP AI 5.2 — mål, implementation och prövbara krav
 
-Öppna https://capstere.github.io/JESP_Game/. Ingen Puter, användarinloggning, API-nyckel eller betalreserv har lagts till. Klassisk chatt finns kvar i `chat.html`.
+Öppna https://capstere.github.io/JESP_Game/. Samma anonyma Pollinations-anslutning är kvar. Ingen Puter, API-nyckel, betald reserv eller ny inloggning. Detta är en förbättring av agentprogrammet, inte nya modellvikter eller ett löfte om högre generell intelligens.
 
-## Vad som ändrats
+## Nytt arbetssätt
 
-- Ett riktigt live-test upptäckte att gamla formatfel fick modellen att skriva om samma filer. Version 5.1.1 tar bort lösta formatfel, anger nästa saknade leverans i varje beslut och blockerar onödiga omskrivningar medan beställda filer saknas. Verkliga testfel och kritikerbegärda rättningar tillåts fortfarande.
+Fördjupad problemlösning är på från början. En separat uppdragsanalys jämför två genomförbara alternativ, väljer en lösning och formulerar 2–5 uppdragsspecifika acceptanskriterier. Analysen sparas som uppdragskontrakt och visas i gränssnittet. Det är korta beslut, inte dold tankekedja.
 
-- Pollinations-anrop var låsta till `reasoning_effort: low`. Nu är **Auto** standard: börja med medium och begär 8192 token; vid avklippning växla till low och mindre arbetssteg i samma körning. Explicit low/medium/high kan väljas. **Live-test 2026-10-22 visade att svaret klipptes vid 1500 token trots begärda 8192.** Detta är ett observerat serverbeteende, inte ett tak vi kan häva. Högre begärd budget är ingen utlovad kapacitet. Ingen ofullständig verktygsåtgärd körs. Systemmeddelandet anger också begärd nivå; modellvikterna har inte ändrats.
-- Normalläget har 12 beslut, inklusive kritiker och rättningar. 6, 18 och 24 är också valbara. HTTP-återförsök räknas som anrop men inte som ytterligare beslut.
-- En separat kritiker granskar faktiska filer och underlag. Kritik skickas till arbetsagenten som får använda verktyg och ändra filer. Därefter krävs ny granskning. `reviewed` och `reviewPassed` är skilda statusar.
-- Saknade explicit beställda filer blockerar avslut. Filer läses tillbaka automatiskt före slutgranskning och JSON-filer syntaxkontrolleras. Detta är leveranskontroll, inte ett bevis på innehållets riktighet.
-- Sökdata parsas innan utdrag begränsas. Navigeringslänkar inuti artiklar räknas inte längre som ytterligare källor. En sökträff är `found`; hämtad tillräcklig löptext är `read`; för lite text är `thin`. Innehållskontrollen är heuristisk, inte en sanningskontroll.
-- `verify_quote` jämför citat med faktiskt hämtad text. Match innebär inte att en slutsats följer av citatet. Granskaren instrueras särskilt att skilja mått, enheter, jämförelser och villkor.
-- Kontexten byggs om från aktuella filer och källunderlag, utan att klippa mitt i serialiserad JSON. Fullt underlag behålls i arbetsytan och ZIP-exporten.
-- **Fortsätt med delresultaten** återanvänder filer, källor, kritik och logg i samma flik. En omladdning raderar fortfarande minnesarbetsytan; detta är inte beständig lagring eller import av gamla ZIP-filer.
-- ZIP innehåller `uppdrag.json`, `korspar.json`, `kallunderlag.json`, `resultat.md` och skapade filer. Modell, antal anrop, begärda inställningar, fel, kritik, versionsnummer och faktisk verktygsaudit följer med. Ingen dold modellresonemangstext exporteras.
+Arbetsagenten får sedan använda verktyg och skapa en faktisk leverans. Auto-läget skiljer heuristiskt mellan bygguppdrag, plan, research och analys. Typen kan väljas uttryckligen. Bygguppdrag får inte avslutas med enbart en Markdown-plan; en begärd plan ska däremot inte i smyg bli en kodbeställning.
 
-## Kostnad, integritet och begränsningar
+Kritikern måste bedöma varje kriterium, ange pass/fail/unknown, en saklig förklaring och en aktuell referens till filversion, lyckat verktygsresultat eller läst källa. Ett generiskt ”ser bra ut” räcker inte. Kritiken skickas tillbaka för riktiga rättningar. Referensvalidering bevisar att underlaget finns, inte att en AI-tolkning är riktig.
 
-Pollinations klassiska anonyma anslutning är kvar. Normalt minst 31 sekunder mellan anrop; tjänstens `Retry-After` respekteras. Ingen IP-rotation, inloggningsgenväg, köpt kredit eller betald fallback används. Vid nekad åtkomst stannar körningen. Gratis tillgång eller obegränsad kvot kan inte garanteras av appen.
+## Nya verktyg och tester
 
-Kilo är fortfarande ett valfritt, uttryckligen valt alternativ med gratisfilter; åtkomsten kan misslyckas. Den nya resonemangsinställningen gäller Pollinations, inte ett löfte om funktioner hos Kilo eller den mindre lokala Qwen-modellen. Lokal AI kräver separat samtycke till modellnedladdning.
+- `edit_file`: exakt unik textersättning med versionskontroll.
+- `append_file`: större filer byggs i delar med versionskontroll. Ingen 150-ordsgräns för hela leveransen.
+- `read_file`: valfria 1-baserade radintervall. `list_files`: aktuell fillista/versioner.
+- `check_project`: statisk kontroll av JSON, vissa HTML-strukturfel och saknade lokala script-/stilmallsfiler. Inte ett funktionstest.
+- `test_js`: efter separat godkännande körs vanlig JS i befintlig isolerad worker/iframe, utan nätverk eller DOM. Inbyggd `assert` räknar faktiskt körda assertions. Namngivna filer/filversioner följer med testresultatet. Stale tester godtas inte som aktuell testning. Mätningen är inte en säkerhetsgaranti mot medvetet falsk testkod.
 
-Online går uppdrag och relevanta verktygsresultat till vald AI-tjänst. Sökfrågor och läsadresser kan skickas till Parallel, Exa och Wikipedia. Lägg inte in hemligheter. Utomstående källtexter är opålitliga. Inga e-postutskick, externa skrivningar, köp eller datorstyrning stöds. JS-exekvering är avstängd tills användaren godkänner den och sandboxen är oförändrad.
+Högst 24 beslut per körning, 18 som standard. Fortsätt-knappen behåller filer och kontrakt i samma flik. Omladdning raderar minnesarbetsytan. Exportera ZIP först. Export innehåller kontrakt, filer, kriteriegranskningar, källunderlag, anrop och fel.
 
-Roller är separata anrop till samma modell, inte oberoende experter. Uppgraderingen är ett bättre arbetsflöde och andra begärda inferensinställningar, **inte finjustering eller ett bevis på högre generell modellintelligens**.
+## Begränsningar
 
-## Tester
+Samma modell kan göra misstag i alla roller. GPT-OSS-20B blir inte en större modell genom dessa ändringar. Tjänstens faktiskt tillåtna modeller, tokenbudget, resonemangsinställningar och kvoter är utanför appens kontroll. Auto begär medium och anpassar efter avklippning; tidigare live-test visade 1500 genererade token trots större begärd budget. Inget kringgående av tjänstens gränser används.
+
+Agenten har inte Unity, Unreal, npm-installation, en full webbläsartestare, e-post, konton eller operativsystemåtkomst. HTML och kod visas som inert text i appen och körs inte vid filvisning. Kodtester kräver en separat kryssruta. Genererade filer ska granskas före användning. Full spelbarhet, säkerhet och prestanda kan inte bevisas av statiska filkontroller eller en AI-granskare.
+
+Gratisåtkomst är kvotbegränsad och kan upphöra. Ingen betalreserv används. AI och webbverktyg får uppdrag och relevanta utdrag; använd inte hemligheter. Kilo är fortsatt ett manuellt valt alternativ, inte en verifierad starkare standardmodell. Den befintliga klassiska chatten finns kvar.
+
+## Verifiering
 
 ```sh
-node --test tests/agent-unit.mjs tests/reasoning-v51.mjs tests/cap-v51.mjs tests/progress-v511.mjs
+node --test tests/agent-unit.mjs tests/reasoning-v51.mjs tests/cap-v51.mjs tests/progress-v511.mjs tests/quality-v52.mjs
 ```
 
-Regressionssviten är deterministisk och använder simulerade modeller där AI behövs. Den kontrollerar bland annat riktig filändring efter kritik, saknade leveranser, felaktiga käll-ID, citatmatchning, kontextbudget, återupptagning och anonym anropskonfiguration.
+De deterministiska testerna använder simulerade modeller. De kontrollerar bl.a. avvisning av plan i byggläge, underkänd tom granskning, versionskonflikter, saknade beroenden, obehörig kodkörning och bevarade funktioner från 5.1.1. Lokala webbläsartester använder simulerad AI men kör JS-sandboxen på riktigt.
 
-`tests/reasoning-live-v51.mjs` är ett separat riktigt Chromium-test mot den anonyma tjänsten. Det skapar tre filer, kontrollerar procentberäkningar och kräver godkänd slutgranskning. Det sparar den faktiska körningen som GitHub Actions-artifact. Ett grönt simulerat test ska aldrig beskrivas som bevis för att detta live-test lyckats.
+Det separata `build-v52.yml` kör en riktig anonym bygguppgift. En separat webbläsare öppnar den genererade FPS-prototypen och testar rörelse, rotation, skott/poäng, återställning och icke-tom canvas. Testresultatet ska läsas från körningens faktiska logg/artefakt; förekomsten av testfilen betyder INTE att testet har passerat. Ingen modellgenererad kod körs i Node eller med repo-/kontoautentisering; spelprovet serveras separat med externa webbförfrågningar blockerade.

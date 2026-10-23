@@ -1,5 +1,5 @@
-import {AI,Workspace,runAgent,freeModels,VERSION,check} from './core.mjs?v=5.1.1';
-import {executeJS} from './sandbox.mjs';
+import {AI,Workspace,runAgent,freeModels,VERSION,check} from './core.mjs?v=5.2.0';
+import {executeJS} from './sandbox.mjs?v=5.2.0';
 import {zipFiles} from './zip.mjs';
 import {localAnswer,unloadLocal} from './local.mjs';
 const $=id=>document.getElementById(id);
@@ -7,7 +7,7 @@ let busy=false,controller=null,space=null,result=null,question='',settings={};
 const node=(tag,text,cls)=>{const e=document.createElement(tag);if(text!==undefined)e.textContent=text;if(cls)e.className=cls;return e;};
 function status(text,cls=''){ $('status').textContent=text;$('status').className=cls; }
 function controls(){
- for(const id of ['run','test','checkKilo','provider','model','steps','reasoning','web','review','code','prompt','downloadConsent'])$(id).disabled=busy;
+ for(const id of ['run','test','checkKilo','provider','model','steps','advanced','taskMode','reasoning','web','review','code','prompt','downloadConsent'])$(id).disabled=busy;
  for(const e of document.querySelectorAll('[data-example]'))e.disabled=busy;
  $('cancel').disabled=!busy||!controller||controller.signal.aborted;
  $('run').textContent=busy?'Agenten arbetar…':'Starta agenten gratis';
@@ -32,6 +32,12 @@ function files(){
 }
 function emit(type,data){
  if(type==='stage'){for(const el of document.querySelectorAll('[data-stage]'))el.classList.toggle('active',el.dataset.stage===data.stage);if(data.step)status(`Agentbeslut ${data.step}/${data.maxSteps}…`);else status('Separat granskning…');}
+ if(type==='contract'){
+  $('contract').replaceChildren(node('p',data.objective),node('p','Val: '+data.choice));
+  for(const x of data.alternatives)$('contract').append(node('p',x,'small'));
+  for(const x of data.assumptions)$('contract').append(node('p','Antagande: '+x,'small'));
+  for(const c of data.criteria)$('contract').append(node('p',c.id+' · '+c.requirement));
+ }
  if(type==='plan'){$('plan').replaceChildren(...data.map(s=>node('li',s)));}
  if(type==='model'){$('answerMeta').textContent=`${data.model} · ${data.calls} AI-anrop`;}
  if(type==='warning')log(data,undefined,'warning');
@@ -40,9 +46,9 @@ function emit(type,data){
  if(type==='file'){files();controls();}
  if(type==='source'){let div=[...$('sources').children].find(e=>e.dataset.sourceId===data.id);if(!div){div=node('div',undefined,'source');div.dataset.sourceId=data.id;$('sources').append(div);}const a=node('a',`[${data.id}] ${data.title}`);a.href=data.url;a.target='_blank';a.rel='noopener noreferrer';const labels={read:'Hämtad text',found:'Sökträff',thin:'Otillräcklig text'};div.replaceChildren(a,node('small',`${labels[data.status]||'Hittad länk'} · ${new URL(data.url).hostname}`));$('sourceCount').textContent=space.sources.size;}
  if(type==='draft'){$('answer').textContent=data;$('answerNote').textContent='Utkast. Granskning är inte slutförd.';controls();}
- if(type==='review'){$('issues').textContent=data.issues.map(String).join('\n');log(data.verdict==='pass'?'Granskning godkänd':'Kritik → rättningsrunda',data);}
+ if(type==='review'){$('issues').textContent=data.issues.map(String).join('\n');log(data.verdict==='pass'&&!data.issues.length?'AI-kravgranskning utan kvarvarande invändningar':'Kritik → rättningsrunda',data);}
  if(type==='trace')controls();
- if(type==='trace'&&['ai_start','ai_end','ai_error','finish_blocked','run_stopped'].includes(data.type))log('Körspår: '+data.type,data);
+ if(type==='trace'&&['ai_start','ai_end','ai_error','finish_blocked','run_stopped','strategy','strategy_error'].includes(data.type))log('Körspår: '+data.type,data);
  if(type==='done'){result=data;$('answer').textContent=data.answer;$('answerNote').textContent=(data.unfinished?'Ofullständigt uppdrag. ':'')+(data.reviewPassed?'Separat AI-granskning godkände aktuell leverans; ingen korrekthetsgaranti.':data.reviewed?'Granskning utförd, men slutleveransen är inte godkänd.':'Ingen godkänd separat AI-granskning.');$('issues').textContent=(data.issues||[]).join('\n');}
 }
 function explain(e){
@@ -59,16 +65,17 @@ async function run(test=false,resume=false){
  if(resume&&$('prompt').value.trim()!==question){status('Återställ uppdragstexten innan du fortsätter, eller välj Starta för ett nytt uppdrag.','error');return;}
  if(!input){status('Skriv ett uppdrag först.');$('prompt').focus();return;}
  if($('provider').value==='local'&&!$('downloadConsent').checked){status('Godkänn modellnedladdningen i inställningarna först.','error');$('settings').open=true;return;}
+ if(resume&&(settings.advanced!==$('advanced').checked||settings.mode!==$('taskMode').value)){status('Behåll samma arbetssätt och uppdragstyp när du fortsätter, eller starta ett nytt uppdrag.','error');return;}
  question=input;controller=new AbortController();const signal=controller.signal;busy=true;result=null;
- settings={provider:$('provider').value,model:$('model').value,reasoning:$('reasoning').value,maxSteps:Number($('steps').value),web:$('web').checked,review:$('review').checked,allowCode:$('code').checked};
+ settings={advanced:$('advanced').checked,mode:$('taskMode').value,provider:$('provider').value,model:$('model').value,reasoning:$('reasoning').value,maxSteps:Number($('steps').value),web:$('web').checked,review:$('review').checked,allowCode:$('code').checked};
  if(resume){space.signal=signal;space.web=settings.web;space.allowCode=settings.allowCode;space.offline.clear();space.lastError=null;}else space=new Workspace({signal,emit,web:settings.web,allowCode:settings.allowCode,execute:executeJS,question});
- $('workspace').hidden=false;if(!resume){for(const id of ['answer','issues','log','files','sources','plan'])$(id).replaceChildren();$('fileCount').textContent=$('sourceCount').textContent='0';$('answerNote').textContent='Arbetar. Verktygsresultat visas i loggen.';}controls();
+ $('workspace').hidden=false;if(!resume){for(const id of ['answer','issues','log','files','sources','plan','contract'])$(id).replaceChildren();$('fileCount').textContent=$('sourceCount').textContent='0';$('answerNote').textContent='Arbetar. Verktygsresultat visas i loggen.';}controls();
  let lastStatusKey='';
  const transportStatus=text=>{status(text);const key=text.replace(/\d+/g,'#');if(key!==lastStatusKey){space.trace.push({time:new Date().toISOString(),type:'status',message:text});lastStatusKey=key;}};
  const ai=new AI({provider:$('provider').value,model:$('model').value,onStatus:transportStatus,local:localAnswer,reasoning:settings.reasoning});
  try{
   if(test){const answer=await ai.ask([{role:'user',content:input}],signal,64);check(signal);space.totalCalls=ai.calls;space.trace.push({type:'connection_test',model:answer.model,calls:ai.calls,requestedReasoning:ai.reasoning});emit('done',{answer:answer.text,reviewed:false,reviewPassed:false,unfinished:false,calls:ai.calls,model:answer.model});emit('model',{model:answer.model,calls:ai.calls});status('Ett riktigt AI-svar mottogs. Detta testar anslutningen, inte hela agenten.','success');}
-  else{result=await runAgent({question,ai,space,signal,maxSteps:Number($('steps').value),review:$('review').checked,emit});status(result.unfinished?'Uppdraget är ofullständigt. Se kvarvarande problem eller tryck Fortsätt.':'Leveranskontrollen är klar. Kontrollera resultat och filer.',result.unfinished?'warning':'success');}
+  else{result=await runAgent({question,ai,space,signal,maxSteps:Number($('steps').value),review:$('review').checked,advanced:settings.advanced,mode:settings.mode,emit});status(result.unfinished?'Uppdraget är ofullständigt. Se kvarvarande problem eller tryck Fortsätt.':'Leveranskontrollen är klar. Kontrollera resultat och filer.',result.unfinished?'warning':'success');}
  }catch(e){space.lastError={name:e.name,message:e.message,status:e.status||null,time:new Date().toISOString()};space.trace.push({type:'ui_error',...space.lastError});status(explain(e),e.name==='AbortError'?'':'error');log('Körningen stoppades',String(e.message||e),'error');$('answerNote').textContent='Ofullständig körning. Resultat och filer som redan skapats har behållits.';}
  finally{busy=false;controller=null;for(const el of document.querySelectorAll('[data-stage]'))el.classList.remove('active');controls();}
 }
@@ -85,11 +92,12 @@ $('checkKilo').onclick=async()=>{
 $('copy').onclick=async()=>{try{await navigator.clipboard.writeText($('answer').textContent);status('Svaret kopierat.','success');}catch{status('Urklipp blockerades. Markera texten och kopiera manuellt.','error');}};
 $('save').onclick=()=>{
  if(!space)return;
- const meta={version:VERSION,question,answer:$('answer').textContent,settings,reviewed:result?.reviewed||false,reviewPassed:result?.reviewPassed||false,unfinished:busy||!result||result.unfinished,stopReason:busy?'running':space.lastError?'error':result?.stopReason||'unknown',error:space.lastError,calls:space.totalCalls,model:result?.model||space.lastModel||null,issues:result?.issues||space.pendingIssues||[],sources:[...space.sources.values()],audit:space.audit,reviews:space.reviews,trace:space.trace,files:[...space.files.values()].map(({name,bytes,version})=>({name,bytes,version}))};
+ const meta={version:VERSION,strategy:space.strategy||null,taskKind:space.taskKind||null,question,answer:$('answer').textContent,settings,reviewed:result?.reviewed||false,reviewPassed:result?.reviewPassed||false,unfinished:busy||!result||result.unfinished,stopReason:busy?'running':space.lastError?'error':result?.stopReason||'unknown',error:space.lastError,calls:space.totalCalls,model:result?.model||space.lastModel||null,issues:result?.issues||space.pendingIssues||[],sources:[...space.sources.values()],audit:space.audit,reviews:space.reviews,trace:space.trace,files:[...space.files.values()].map(({name,bytes,version})=>({name,bytes,version}))};
  const all=[...space.files.values()].map(f=>({name:'filer/'+f.name,content:f.content}));
+ if(space.strategy)all.push({name:'uppdragskontrakt.json',content:JSON.stringify(space.strategy,null,2)});
  all.push({name:'korspar.json',content:JSON.stringify(space.trace,null,2)},{name:'kallunderlag.json',content:JSON.stringify(Object.fromEntries(space.evidence),null,2)},{name:'uppdrag.json',content:JSON.stringify(meta,null,2)},{name:'resultat.md',content:'# JESP AI\n\n'+question+'\n\n'+$('answer').textContent+'\n\n## Källor\n'+[...space.sources.values()].map(s=>`[${s.id}] ${s.url}`).join('\n')});
  download('JESP_AI_uppdrag.zip',zipFiles(all));
 };
-const examples={research:'Sök i officiella källor vad WebAssembly är. Läs en relevant källa och skriv en kort svensk rapport med källhänvisningar. Spara rapporten som webassembly.md. Hitta inte på fakta om verktygen misslyckas.',code:'Skapa en liten JavaScript-funktion sum(a,b) i sum.js. Skriv två tester, inklusive negativa tal. Kör testerna om jag har aktiverat isolerade JavaScript-tester. Spara en README.md som är tydlig med vilka tester som faktiskt kördes.',calculate:'Räkna (125 * 8) - 175 med calculate-verktyget. Skapa resultat.json med uttrycket och resultatet. Kontrollera filens JSON-syntax med inspect_file och sammanfatta resultatet.'};
+const examples={research:'Sök i officiella källor vad WebAssembly är. Läs en relevant källa och skriv en kort svensk rapport med källhänvisningar. Spara rapporten som webassembly.md. Hitta inte på fakta om verktygen misslyckas.',code:'Bygg en liten körbar webbläsarapp för en inköpslista, inte en plan. Skapa index.html och logic.js. Användaren ska kunna lägga till, bocka av och ta bort varor. Separera logiken från DOM så att den kan testas utan webbläsare. Använd inga externa bibliotek. Testa normalfall, tom inmatning och borttagning av okänt id med test_js om jag har godkänt kodkörning. Annars ange tydligt att testen inte körts.',calculate:'Räkna (125 * 8) - 175 med calculate-verktyget. Skapa resultat.json med uttrycket och resultatet. Kontrollera filens JSON-syntax med inspect_file och sammanfatta resultatet.'};
 for(const e of document.querySelectorAll('[data-example]'))e.onclick=()=>{$('prompt').value=examples[e.dataset.example];$('prompt').focus();};
-window.JESP_AGENT_BOOTED=true;window.JESP_AI_BOOTED=true;status('Version 5.1.1 · Fördjupat läge, leveranskontroll och kritiker → rättning är redo.');controls();
+window.JESP_AGENT_BOOTED=true;window.JESP_AI_BOOTED=true;status('Version 5.2.0 · Uppdragsanalys → implementation → kravgranskning. Ingen modellträning eller större molnmodell utlovas.');controls();

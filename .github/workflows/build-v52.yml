@@ -1,0 +1,35 @@
+name: Agent v5.2 real build and independent gameplay checks
+on:
+  push:
+    branches: [feat/goal-driven-v52]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: jesp-v52-build
+  cancel-in-progress: true
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 24
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Deterministic regression tests (not live inference)
+        run: node --test tests/agent-unit.mjs tests/reasoning-v51.mjs tests/cap-v51.mjs tests/progress-v511.mjs tests/quality-v52.mjs
+      - name: Install pinned browser
+        run: |
+          npm install --no-save --package-lock=false playwright@1.56.1
+          npx playwright install chromium
+      - name: Real anonymous build, then independent movement/shooting/reset checks
+        run: node tests/build-live-v52.mjs
+      - name: Preserve actual evidence including failures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-live-v52
+          path: build-live-evidence/
