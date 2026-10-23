@@ -1,6 +1,7 @@
 import {extractAnswer,check,pause,retrySeconds} from './runtime.mjs?v=5.1.1';
 export const GATEWAY='https://dzjjffgohxeoahtflqjo.supabase.co/functions/v1/jesp-gateway';
 export const DEFAULT_WORKER='nvidia/nemotron-3.5-lightning:free';
+export function roleBudget(ai){const auto=ai.reasoning==='auto'||!ai.reasoning;const reflective=['architect','critic','repair'].includes(ai.role);return {effort:auto?(reflective?'medium':'low'):ai.reasoning,maxTokens:auto?(ai.role==='architect'?3072:reflective?8192:6144):12288};}
 export const DEFAULT_CRITIC='nvidia/nemotron-3-ultra-550b-a55b:free';
 async function jsonRequest(path,body,signal){
  check(signal);const controller=new AbortController();
@@ -21,13 +22,13 @@ export async function backendAsk(ai,messages,signal,maxTokens=4096,tools){
  const model=['critic','repair'].includes(ai.role)?ai.criticModel:ai.workerModel;
  if(!model)throw new Error('Välj en tillgänglig gratismodell för arbete och granskning.');
  if(JSON.stringify(messages).length>160000)throw new Error('Arbetskontexten överskrider backendens gräns. Dela upp uppdraget.');
- const effort=ai.reasoning==='auto'?(ai.effectiveReasoning||'medium'):ai.reasoning||'medium';
+ let {effort,maxTokens:budget}=roleBudget(ai);if(ai.effectiveReasoning==='low'&&ai.reasoning==='auto')effort='low';
  let inputs=messages;
  if(ai.jsonProtocol&&tools?.length){inputs=[...messages,{role:'user',content:'Use validated JSON only. Return {"kind":"actions","actions":[{"tool":"name","args":{}}]} or {"kind":"final","answer":"..."}. During initial strategy return one submit_strategy action. Tool schemas: '+JSON.stringify(tools)}];tools=undefined;}
  for(let attempt=0;attempt<2;attempt++){
   check(signal);ai.onStatus((ai.role==='critic'?'Granskare: ':'Arbetsmodell: ')+model+' · anonym backend');ai.calls++;
   try{
-   const data=await jsonRequest('/chat',{model,messages:inputs,max_tokens:maxTokens<=64?1024:12288,reasoning:effort,...(tools?{tools}:{})},signal);
+   const data=await jsonRequest('/chat',{model,messages:inputs,max_tokens:maxTokens<=64?1024:budget,reasoning:effort,...(tools?{tools}:{})},signal);
    let result;
    try{result=extractAnswer(data);}catch(e){
     if(/ogiltigt verktygsanrop|fler än fyra samtidiga|Avslut saknar svarstext/.test(e.message||'')){ai.jsonProtocol=true;return {text:'',protocolError:'Ogiltigt funktionsanrop. Inget kördes. Använd komplett JSON nästa gång.',model:data.model,truncated:false,usage:data.usage};}
@@ -39,6 +40,7 @@ export async function backendAsk(ai,messages,signal,maxTokens=4096,tools){
   }catch(e){
    check(signal);const seconds=e.retryAfter||5;
    if(attempt||![429,500,502,503,504].includes(e.status)||seconds>90)throw e;
+   if(e.status===504&&ai.reasoning==='auto'){effort='low';budget=Math.min(budget,4096);inputs=[...messages,{role:'user',content:'Återhämtning efter tidsgräns. Gör endast ett kort nästa steg: en liten komplett fil eller exakt versionskontrollerad ändring. Försök inte skriva hela projektet i ett svar. Inga verktyg kördes från det förra anropet.'}];}
    ai.onStatus('Backend HTTP '+e.status+'. Respekterar väntetiden '+seconds+' s; ett återförsök.');await pause(seconds*1000,signal);
   }
  }
