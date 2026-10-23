@@ -1,0 +1,43 @@
+name: Deployed free gateway verification
+on:
+  push:
+    branches: [feat/backend-v6]
+    paths: [.github/workflows/gateway-smoke-v6.yml]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - name: Invoke the actual Supabase endpoint without credentials
+        run: |
+          mkdir -p evidence
+          cat > /tmp/test.mjs <<'JS'
+          import {writeFile} from 'node:fs/promises';
+          const base='https://dzjjffgohxeoahtflqjo.supabase.co/functions/v1/jesp-gateway';
+          const out={at:new Date().toISOString(),authenticated:false,results:[]};
+          const origin='https://capstere.github.io';
+          async function request(path,body){const r=await fetch(base+path,{method:body?'POST':'GET',headers:{Origin:origin,...(body?{'Content-Type':'application/json'}:{})},body:body?JSON.stringify(body):undefined,signal:AbortSignal.timeout(130000)});let data;try{data=await r.json();}catch{data={error:'Invalid JSON'}}return {status:r.status,cors:r.headers.get('access-control-allow-origin'),data};}
+          try{
+           out.health=await request('/health');out.catalogue=await request('/models');
+           out.paidGuard=await request('/chat',{model:'anthropic/claude-opus-4.7',messages:[{role:'user',content:'test'}]});
+           const available=out.catalogue.data.models||[];
+           for(const id of ['nvidia/nemotron-3-ultra-550b-a55b:free','kilo-auto/free']){
+            if(!available.some(x=>x.id===id))continue;
+            const before=Date.now();
+            const reply=await request('/chat',{model:id,messages:[{role:'user',content:'Three tasks A, B, C take 3, 4, 2 hours. B and C both depend on A. Two workers can work in parallel; each task is indivisible and needs one worker. Give a minimum-duration schedule and prove no shorter schedule exists. Return JSON only with makespan, schedule, and lower_bound.'}],max_tokens:4096,reasoning:'medium'});
+            out.results.push({id,...reply,ms:Date.now()-before});
+           }
+          }catch(e){out.error=e.message;}
+          console.log('GATEWAY_RESULT '+JSON.stringify(out));
+          await writeFile('evidence/gateway.json',JSON.stringify(out,null,2));
+          if(out.health?.status!==200||out.paidGuard?.status!==403||!out.results.some(x=>x.status===200&&x.data.choices?.[0]?.message?.content))process.exitCode=1;
+          JS
+          node /tmp/test.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: gateway-smoke-v6
+          path: evidence/
