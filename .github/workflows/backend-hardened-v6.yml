@@ -1,0 +1,41 @@
+name: Backend v6 real build with evidence repair
+on:
+  push:
+    branches: [feat/backend-v6]
+    paths: [.github/workflows/backend-hardened-v6.yml, tools/harden_backend_v6.py]
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/backend-v6
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Apply evidence correction and run all 144 deterministic tests
+        run: |
+          python3 tools/harden_backend_v6.py
+          node --check agents/runner.mjs
+          node --test tests/agent-unit.mjs tests/reasoning-v51.mjs tests/cap-v51.mjs tests/progress-v511.mjs tests/quality-v52.mjs tests/snapshot-v52.mjs tests/protocol-recovery-v52.mjs tests/backend-v6.mjs tests/backend-hardening-v6.mjs
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add agents index.html
+          if ! git diff --cached --quiet; then git commit -m 'Apply observed backend failure corrections [skip ci]'; git push origin HEAD:feat/backend-v6; fi
+          mkdir -p backend-hardened-evidence
+          git rev-parse HEAD > backend-hardened-evidence/candidate-commit.txt
+      - name: Install pinned browser
+        run: |
+          npm install --no-save --package-lock=false playwright@1.56.1
+          npx playwright install chromium
+      - name: Real free models and unchanged independent FPS gameplay assertions
+        run: node tests/backend-hardened-live-v6.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: backend-v6-hardened-build
+          path: backend-hardened-evidence/
