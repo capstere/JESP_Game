@@ -1,5 +1,5 @@
-import {backendModels,DEFAULT_WORKER,DEFAULT_CRITIC} from './backend.mjs?v=6.0.0';
-import {AI,Workspace,runAgent,freeModels,VERSION,check} from './core.mjs?v=6.0.0';
+import {backendModels,DEFAULT_WORKER,DEFAULT_CRITIC} from './backend.mjs?v=6.0.1';
+import {AI,Workspace,runAgent,freeModels,VERSION,check} from './core.mjs?v=6.0.1';
 import {executeJS} from './sandbox.mjs?v=5.2.0';
 import {zipFiles} from './zip.mjs';
 import {localAnswer,unloadLocal} from './local.mjs';
@@ -104,7 +104,7 @@ $('save').onclick=()=>{
 };
 const examples={research:'Sök i officiella källor vad WebAssembly är. Läs en relevant källa och skriv en kort svensk rapport med källhänvisningar. Spara rapporten som webassembly.md. Hitta inte på fakta om verktygen misslyckas.',code:'Bygg en liten körbar webbläsarapp för en inköpslista, inte en plan. Skapa index.html och logic.js. Användaren ska kunna lägga till, bocka av och ta bort varor. Separera logiken från DOM så att den kan testas utan webbläsare. Använd inga externa bibliotek. Testa normalfall, tom inmatning och borttagning av okänt id med test_js om jag har godkänt kodkörning. Annars ange tydligt att testen inte körts.',calculate:'Räkna (125 * 8) - 175 med calculate-verktyget. Skapa resultat.json med uttrycket och resultatet. Kontrollera filens JSON-syntax med inspect_file och sammanfatta resultatet.'};
 for(const e of document.querySelectorAll('[data-example]'))e.onclick=()=>{$('prompt').value=examples[e.dataset.example];$('prompt').focus();};
-window.JESP_AGENT_BOOTED=true;window.JESP_AI_BOOTED=true;status('Version 6.0.0 · Backend, arbetsmodell och separat kritiker. Ingen inloggning eller betalreserv.');controls();
+window.JESP_AGENT_BOOTED=true;window.JESP_AI_BOOTED=true;status('Version 6.0.1 · Backend, arbetsmodell och separat kritiker. Ingen inloggning eller betalreserv.');controls();
 
 async function refreshBackend(){
  if(busy)return;backendReady=false;controls();$('backendInfo').textContent='Hämtar aktuella gratismodeller från backend…';

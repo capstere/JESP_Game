@@ -35,7 +35,7 @@ try {
   for(const name of ['index.html','logic.js','game.js']){if(!files[name]?.trim())throw new Error('Missing generated file: '+name);writeFileSync(dir+'/generated/'+name,files[name]);}
   generatedServer=spawn('python3',['-m','http.server','8124','--bind','127.0.0.1'],{cwd:dir+'/generated',stdio:'ignore'});
   const isolated=await browser.newContext({acceptDownloads:false,serviceWorkers:'block'});
-  await isolated.route('**/*',r=>r.request().url().startsWith('http://127.0.0.1:8124/')?r.continue():r.abort());
+  await isolated.route('**/*',r=>(()=>{const u=new URL(r.request().url());return u.origin==='http://127.0.0.1:8124'&&['/','/index.html','/logic.js','/game.js'].includes(u.pathname)?r.continue():r.abort();})());
   const game=await isolated.newPage();const gameErrors=[];game.on('pageerror',e=>gameErrors.push(String(e)));
   for(let i=0;i<12;i++){try{await game.goto('http://127.0.0.1:8124/',{waitUntil:'load',timeout:10000});break;}catch{await new Promise(r=>setTimeout(r,500));}}
   await game.waitForFunction(()=>window.gameState&&document.querySelector('canvas'),null,{timeout:10000});

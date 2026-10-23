@@ -1,52 +1,18 @@
 {
-  "version": "5.2.0",
+  "version": "6.0.1",
   "date": "2026-10-23",
   "model_weights_changed": false,
-  "stronger_cloud_model_verified": false,
-  "complete_fps_build_verified": false,
   "deterministic_tests": {
-    "passed": 117,
-    "failed": 0,
-    "model_responses": "simulated where needed"
+    "passed": 163,
+    "model_responses": "simulated where required"
   },
-  "offline_browser_checks": {
-    "passed": 9,
-    "model_responses": "simulated",
-    "sandbox_execution": "real isolated JavaScript"
+  "historical_live_acceptance": {
+    "run_id": 39957120004,
+    "checks": 28,
+    "result": "passed for code; final prose comparison was wrong and now has a dedicated review gate"
   },
-  "live_tests": [
-    {
-      "run_id": 39938553746,
-      "commit": "9425afae46cde7af9ab20e35a7d3ebcf4aa9e388",
-      "authenticated": false,
-      "model": "gpt-oss-20b",
-      "result": "failed",
-      "detail": "HTTP 503 before implementation was complete"
-    },
-    {
-      "run_id": 39940010544,
-      "commit": "96b49f23399d0575656f651b50811496027fe9ab",
-      "authenticated": false,
-      "model": "gpt-oss-20b",
-      "result": "failed",
-      "detail": "Repeated strategy-schema errors, then invalid native function call; index.html and logic.js existed but game.js was missing"
-    },
-    {
-      "run_id": 39942584791,
-      "commit": "4b0328def5a1e8be4f51e46757ff139a3b9e7f8b",
-      "authenticated": false,
-      "model": "gpt-oss-20b",
-      "result": "failed",
-      "detail": "Strategy validated on first response; next provider call returned HTTP 500"
-    }
-  ],
-  "changes_after_last_live_test": [
-    "HTTP 500 added to bounded transient recovery; covered by an additional deterministic test, not a new complete live FPS run"
-  ],
-  "alternative_model_probe": {
-    "run_id": 39940163749,
-    "inference_verified": false,
-    "detail": "Kilo catalogue blocked by CORS from https://capstere.github.io"
-  },
-  "scope": "Tooling, versioned editing, task contracts and review gates have improved. Mocked tests do not establish model intelligence. A complete autonomous FPS build has NOT passed verification."
+  "current_live_acceptance": "See release-v601 workflow artifact. A passing test is required before merge; the existence of test code is not evidence of success.",
+  "no_login": true,
+  "paid_fallback": false,
+  "unlimited_capacity_claimed": false
 }

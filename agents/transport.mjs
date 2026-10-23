@@ -1,4 +1,4 @@
-import {backendAsk,DEFAULT_WORKER,DEFAULT_CRITIC} from './backend.mjs?v=6.0.0';
+import {backendAsk,DEFAULT_WORKER,DEFAULT_CRITIC} from './backend.mjs?v=6.0.1';
 import {AI as ProviderAI,pause,check} from './runtime.mjs?v=5.1.1';
 export function transientDelay(error,attempt) {
  if(![500,502,503,504].includes(error?.status)||attempt>=2)return null;

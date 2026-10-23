@@ -1,5 +1,5 @@
 import {Workspace as BaseWorkspace,filename,check} from './runtime.mjs?v=5.1.1';
-import {projectCheck} from './quality.mjs?v=6.0.0';
+import {projectCheck} from './quality.mjs?v=6.0.1';
 export class Workspace extends BaseWorkspace {
   async tool(name,args={}) {
     check(this.signal);

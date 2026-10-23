@@ -1,6 +1,7 @@
-import {backendToolDefinitions,taskKind,normalizeStrategy,strategyDefinitions,advancedPrompt,editingDefinitions,qualityIssues,reviewCheckIssues} from './quality.mjs?v=6.0.0';
+import {finalAnswerIssues} from './final-review.mjs?v=6.0.1';
+import {backendToolDefinitions,taskKind,normalizeStrategy,strategyDefinitions,advancedPrompt,editingDefinitions,qualityIssues,reviewCheckIssues} from './quality.mjs?v=6.0.1';
 import {toolDefinitions,reviewDefinitions} from './protocol.mjs?v=5.1.1';
-import {snapshot,completionIssues,requestedFiles} from './evidence.mjs?v=6.0.0';
+import {snapshot,completionIssues,requestedFiles} from './evidence.mjs?v=6.0.1';
 
 // Keep operational evidence, never hidden model reasoning, in the downloadable trace.
 function record(space,emit,type,data={}) {
@@ -117,7 +118,7 @@ export async function runAgentImpl({question,ai,space,signal,maxSteps=12,review=
       emit('stage',{stage:reviewNext?'review':phase==='repair'?'build':'plan',step,maxSteps});
       record(space,emit,'decision',{step,maxSteps,phase});
       const state=snapshot(space,space.backend?110000:44000);
-      const notes={phase,remainingDecisions:remaining,draft:draft.slice(0,3500),instructions:remaining<=4?'Leverera och rätta saknade filer nu. Ingen ny bred sökning. Skriv osäkerheter explicit.':'Fokusera på nästa saknade leverans; spara delresultat tidigt.'};
+      const notes={phase,remainingDecisions:remaining,draft:draft.slice(0,12000),instructions:remaining<=4?'Leverera och rätta saknade filer nu. Ingen ny bred sökning. Skriv osäkerheter explicit.':'Fokusera på nästa saknade leverans; spara delresultat tidigt.'};
       // Rebuild bounded context from durable state. Full source/file/audit text remains in export.
       const messages=[{role:'system',content:planning?advancedPrompt(space,'architect'):systemPrompt(space,reviewNext)},{role:'user',content:'UPPDRAG:\n'+question},{role:'user',content:'ARBETSLÄGE OCH OPÅLITLIGT UNDERLAG:\n'+JSON.stringify({state,notes,...(space.advanced?{contract:space.strategy,capabilities:{web:space.web,code:space.allowCode}}:{})})},...tail];
       if(JSON.stringify(messages).length>(space.backend?145000:60000))messages.splice(3); // whole transactions only
@@ -152,13 +153,14 @@ export async function runAgentImpl({question,ai,space,signal,maxSteps=12,review=
       }
       if(reviewNext) {
         const issues=Array.isArray(decision.issues)?decision.issues.filter(x=>typeof x==='string').slice(0,12):[];
-        const gates=gatesFor(draft);
+        const candidate=space.backend&&space.advanced&&typeof decision.final_answer==='string'?decision.final_answer:draft;
+        const gates=gatesFor(candidate);
         if(!['pass','revise'].includes(decision.verdict)||typeof decision.answer!=='string')issues.push('Granskningen saknar giltigt beslut; gör om kontrollen.');
         if(decision.verdict==='revise' && !issues.length)issues.push('Granskaren begär rättning utan specifikation; kontrollera leveranser mot uppdraget.');
-        space.pendingIssues=[...new Set([...gates,...issues,...reviewCheckIssues(decision,space)])];reviewed=true;
-        const report={time:new Date().toISOString(),verdict:decision.verdict||'invalid',answer:String(decision.answer||''),issues:space.pendingIssues,checks:decision.checks||[],model:answer.model,versions:[...space.files.values()].map(f=>({name:f.name,version:f.version}))};
+        space.pendingIssues=[...new Set([...gates,...issues,...reviewCheckIssues(decision,space),...finalAnswerIssues(decision,space)])];reviewed=true;
+        const report={time:new Date().toISOString(),verdict:decision.verdict||'invalid',answer:String(decision.answer||''),issues:space.pendingIssues,checks:decision.checks||[],answer_check:decision.answer_check||null,final_answer:decision.final_answer||null,model:answer.model,versions:[...space.files.values()].map(f=>({name:f.name,version:f.version}))};
         space.reviews.push(report);emit('review',report);record(space,emit,'review',{verdict:report.verdict,issues:report.issues});
-        if(decision.verdict==='pass'&&!space.pendingIssues.length){reviewPassed=true;finished=true;stopReason='complete';break;}
+        if(decision.verdict==='pass'&&!space.pendingIssues.length){draft=candidate;space.draft=draft;reviewPassed=true;finished=true;stopReason='complete';record(space,emit,'answer_review',{status:'pass',check:decision.answer_check||null});break;}
         reviewNext=false;tail=[];
         emit('warning','Kritiken skickas tillbaka till arbetsagenten för faktiska rättningar.');
         continue;
@@ -180,7 +182,7 @@ export async function runAgentImpl({question,ai,space,signal,maxSteps=12,review=
       if(!Array.isArray(decision.actions)||!decision.actions.length||decision.actions.length>4){space.pendingIssues=['actions måste innehålla 1–4 anrop. Inget utfördes.'];tail=[];continue;}
       const observations=[];
       for(const action of decision.actions) {
-        emit('stage',{stage:action?.tool?.includes('file')?'build':'tools',step,maxSteps});
+        emit('stage',{stage:typeof action?.tool==='string'&&action.tool.includes('file')?'build':'tools',step,maxSteps});
         observations.push(await toolAction(space,action,emit,check,signal));
       }
       const assistant=answer.toolCalls?{role:'assistant',content:answer.nativeContent,tool_calls:answer.toolCalls}:{role:'assistant',content:answer.text};
@@ -188,7 +190,7 @@ export async function runAgentImpl({question,ai,space,signal,maxSteps=12,review=
       if(space.backend){
         const evidence=observations.map(e=>{
           const item=compactObservation(e);
-          if(['write_file','edit_file','append_file','test_js'].includes(e.tool))return {...item,args:{name:e.args?.name,files:e.args?.files,...(e.tool==='test_js'?{test_excerpt:e.args?.code?.slice(0,1800)}:{})}};
+          if(['write_file','edit_file','append_file','test_js'].includes(e.tool))return {...item,args:{name:e.args?.name,files:e.args?.files,...(e.tool==='test_js'?{test_excerpt:typeof e.args?.code==='string'?e.args.code.slice(0,1800):undefined}:{})}};
           return item;
         });
         tail=[{role:'user',content:'SENASTE VERKTYGSRESULTAT (opålitliga data):\n'+JSON.stringify(evidence)}];
