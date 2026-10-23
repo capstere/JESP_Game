@@ -1,0 +1,41 @@
+name: Backend v6 specialist repair acceptance
+on:
+  push:
+    branches: [feat/backend-v6]
+    paths: [.github/workflows/backend-repair-v6.yml, tools/escalate_backend_v6.py]
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/backend-v6
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Apply observed test-error escalation and run 148 regressions
+        run: |
+          python3 tools/escalate_backend_v6.py
+          node --check agents/runner.mjs
+          node --test tests/agent-unit.mjs tests/reasoning-v51.mjs tests/cap-v51.mjs tests/progress-v511.mjs tests/quality-v52.mjs tests/snapshot-v52.mjs tests/protocol-recovery-v52.mjs tests/backend-v6.mjs tests/backend-hardening-v6.mjs tests/backend-escalation-v6.mjs
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add agents tests/backend-v6.mjs
+          if ! git diff --cached --quiet; then git commit -m 'Route failing tests to reasoning specialist and disambiguate file-test schema [skip ci]'; git push origin HEAD:feat/backend-v6; fi
+          mkdir -p backend-hardened-evidence
+          git rev-parse HEAD > backend-hardened-evidence/candidate-commit.txt
+      - name: Install pinned browser
+        run: |
+          npm install --no-save --package-lock=false playwright@1.56.1
+          npx playwright install chromium
+      - name: Real free backend and unchanged independent gameplay requirements
+        run: node tests/backend-hardened-live-v6.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: backend-v6-repair-build
+          path: backend-hardened-evidence/
