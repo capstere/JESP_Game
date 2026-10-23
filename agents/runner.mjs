@@ -1,4 +1,4 @@
-import {taskKind,normalizeStrategy,strategyDefinitions,advancedPrompt,editingDefinitions,qualityIssues,reviewCheckIssues} from './quality.mjs?v=6.0.0';
+import {backendToolDefinitions,taskKind,normalizeStrategy,strategyDefinitions,advancedPrompt,editingDefinitions,qualityIssues,reviewCheckIssues} from './quality.mjs?v=6.0.0';
 import {toolDefinitions,reviewDefinitions} from './protocol.mjs?v=5.1.1';
 import {snapshot,completionIssues,requestedFiles} from './evidence.mjs?v=6.0.0';
 
@@ -40,7 +40,8 @@ eller {"kind":"final","answer":"kort slutsvar"}. Högst 4 verktyg per beslut. Tj
 }
 async function toolAction(space,action,emit,check,signal,origin='agent') {
   check(signal);
-  const tool=typeof action?.tool==='string'?action.tool:'okänt';
+  const requestedTool=typeof action?.tool==='string'?action.tool:'okänt';
+  const tool=requestedTool==='test_files'?'test_js':requestedTool;
   const args=action?.args||{};
   emit('action',{tool,args});
   const started=Date.now();let result;
@@ -54,6 +55,19 @@ async function toolAction(space,action,emit,check,signal,origin='agent') {
   }catch(e){check(signal);result={ok:false,error:e.message||String(e)};}
   const event={id:'T'+(space.audit.length+1),tool,args,...result,milliseconds:Date.now()-started,origin,time:new Date().toISOString()};
   space.audit.push(event);emit('observation',event);
+  if(space.backend&&space.advanced&&tool==='test_js'){
+    // A successful HTTP/tool dispatch is NOT a passed code test.
+    const failed=!event.ok||event.data?.passed!==true||!(event.data?.assertions>0);
+    space.pendingIssues=space.pendingIssues.filter(x=>!x.startsWith('TEST: '));
+    if(failed){
+      const names=args.files||[args.name].filter(Boolean);
+      space.pendingIssues.push('TEST: '+names.join(', ')+': '+(event.error||event.data?.error||'Inga körda assertions')+'. Felsök den aktuella kodfilen; kör inte samma fel oförändrat.');
+      record(space,emit,'repair_required',{reason:'actual_test_failure',files:names,error:event.error||event.data?.error||'No assertions',nextRole:'repair'});
+    }else{
+      const current=new Set((event.data.versions||[]).filter(v=>space.files.get(v.name)?.version===v.version).map(v=>v.name));
+      space.pendingIssues=space.pendingIssues.filter(x=>!x.startsWith('Inga godkända assertions mot aktuell version')&&![...current].some(n=>x==='Misslyckat test för '+n||x==='Senaste testet för aktuell version misslyckades: '+n));
+    }
+  }
   record(space,emit,'tool',{tool,ok:event.ok,milliseconds:event.milliseconds,origin});
   return event;
 }
@@ -111,6 +125,7 @@ export async function runAgentImpl({question,ai,space,signal,maxSteps=12,review=
       let tools=reviewNext?(space.advanced?undefined:reviewDefinitions()):toolDefinitions(space);
       if(planning)tools=strategyDefinitions();
       else if(space.advanced&&!reviewNext){const extra=editingDefinitions(space),names=new Set(extra.map(t=>t.function.name));tools=[...tools.filter(t=>!names.has(t.function.name)),...extra];}
+      if(space.backend&&!planning&&!reviewNext)tools=backendToolDefinitions(tools,space);
       const answer=await ask(messages,tools,reviewNext?'critic':phase);
       let decision;
       try {

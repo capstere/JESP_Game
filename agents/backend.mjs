@@ -18,7 +18,7 @@ async function jsonRequest(path,body,signal){
 }
 export async function backendModels(signal){const d=await jsonRequest('/models',null,signal);if(!Array.isArray(d.models))throw new Error('Ogiltig modellkatalog.');return d.models.filter(m=>m.supported_parameters?.includes('tools')&&!/content-safety/.test(m.id));}
 export async function backendAsk(ai,messages,signal,maxTokens=4096,tools){
- const model=ai.role==='critic'?ai.criticModel:ai.workerModel;
+ const model=['critic','repair'].includes(ai.role)?ai.criticModel:ai.workerModel;
  if(!model)throw new Error('Välj en tillgänglig gratismodell för arbete och granskning.');
  if(JSON.stringify(messages).length>160000)throw new Error('Arbetskontexten överskrider backendens gräns. Dela upp uppdraget.');
  const effort=ai.reasoning==='auto'?(ai.effectiveReasoning||'medium'):ai.reasoning||'medium';
