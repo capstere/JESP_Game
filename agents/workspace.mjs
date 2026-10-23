@@ -1,5 +1,5 @@
 import {Workspace as BaseWorkspace,filename,check} from './runtime.mjs?v=5.1.1';
-import {projectCheck} from './quality.mjs?v=5.2.0';
+import {projectCheck} from './quality.mjs?v=6.0.0';
 export class Workspace extends BaseWorkspace {
   async tool(name,args={}) {
     check(this.signal);
@@ -29,6 +29,7 @@ export class Workspace extends BaseWorkspace {
       if(typeof args.code!=='string'||!args.code.trim())throw new Error('Testkod krävs.');
       const names=args.files!==undefined?args.files:args.name?[args.name]:[];
       if(!Array.isArray(names)||names.length>6||args.files&&args.name)throw new Error('Ange name ELLER files (högst sex), inte båda.');
+      if(this.backend && names.length===0 && [...this.files.keys()].some(n=>/\.(js|mjs)$/.test(n)))throw new Error('Ange name eller files för att testa de sparade filerna, inte en kopia av implementationen. Tillgängliga JS-filer: '+[...this.files.keys()].filter(n=>/\.(js|mjs)$/.test(n)).join(', '));
       const files=names.map(name=>{const f=this.files.get(filename(name));if(!f)throw new Error('Filen finns inte: '+name);return f;});
       const source=files.map(f=>f.content).join('\n;\n');
       const body=source+'\n;\n'+args.code;

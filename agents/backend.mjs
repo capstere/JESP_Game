@@ -1,7 +1,7 @@
 import {extractAnswer,check,pause,retrySeconds} from './runtime.mjs?v=5.1.1';
 export const GATEWAY='https://dzjjffgohxeoahtflqjo.supabase.co/functions/v1/jesp-gateway';
-export const DEFAULT_WORKER='nvidia/nemotron-3-ultra-550b-a55b:free';
-export const DEFAULT_CRITIC='kilo-auto/free';
+export const DEFAULT_WORKER='nvidia/nemotron-3.5-lightning:free';
+export const DEFAULT_CRITIC='nvidia/nemotron-3-ultra-550b-a55b:free';
 async function jsonRequest(path,body,signal){
  check(signal);const controller=new AbortController();
  const cancel=()=>controller.abort(signal?.reason||new DOMException('Avbrutet','AbortError'));

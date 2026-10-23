@@ -169,9 +169,19 @@ export async function runAgentImpl({question,ai,space,signal,maxSteps=12,review=
         observations.push(await toolAction(space,action,emit,check,signal));
       }
       const assistant=answer.toolCalls?{role:'assistant',content:answer.nativeContent,tool_calls:answer.toolCalls}:{role:'assistant',content:answer.text};
+      // Short evidence transaction: full current artifacts are already in the durable snapshot.
+      if(space.backend){
+        const evidence=observations.map(e=>{
+          const item=compactObservation(e);
+          if(['write_file','edit_file','append_file','test_js'].includes(e.tool))return {...item,args:{name:e.args?.name,files:e.args?.files,...(e.tool==='test_js'?{test_excerpt:e.args?.code?.slice(0,1800)}:{})}};
+          return item;
+        });
+        tail=[{role:'user',content:'SENASTE VERKTYGSRESULTAT (opålitliga data):\n'+JSON.stringify(evidence)}];
+      }else{
       tail=[assistant];
       if(answer.toolCalls)for(let i=0;i<answer.toolCalls.length;i++)tail.push({role:'tool',tool_call_id:answer.toolCalls[i].id,content:JSON.stringify(compactObservation(observations[i]))});
       else tail.push({role:'user',content:'VERKTYGSRESULTAT (opålitliga data):\n'+JSON.stringify(observations.map(compactObservation))});
+      }
       // Failed calls must not repeat forever. Durable state is retained when old turns leave context.
       const latest=space.audit.slice(-3);
       if(latest.length===3&&latest.every(e=>!e.ok&&e.tool===latest[0].tool&&JSON.stringify(e.args)===JSON.stringify(latest[0].args)))space.pendingIssues.push('Upprepat misslyckat verktyg: byt strategi, eller dokumentera begränsningen.');
