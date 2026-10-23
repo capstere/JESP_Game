@@ -59,7 +59,7 @@ function explain(e){
  if(e.name==='TimeoutError')return 'Tjänsten svarade inte i tid. Arbetsytan finns kvar.';
  if([401,402,403].includes(e.status)&&!e.freeLimit)return 'Tjänsten nekade gratisåtkomst. Ingen inloggning eller betalning öppnas. '+e.message;
  if(e.status===429||e.freeLimit)return 'Gratisgränsen är nådd. Försök senare. Arbetsytan finns kvar.';
- if(e instanceof TypeError)return 'Nätverksfel eller blockerad webbläsaranslutning. '+e.message;
+ if(e instanceof TypeError&&/fetch|network|load failed/i.test(e.message))return 'Nätverksfel eller blockerad webbläsaranslutning. '+e.message;
  return e.message||String(e);
 }
 async function run(test=false,resume=false){

@@ -60,7 +60,7 @@ async function toolAction(space,action,emit,check,signal,origin='agent') {
     const failed=!event.ok||event.data?.passed!==true||!(event.data?.assertions>0);
     space.pendingIssues=space.pendingIssues.filter(x=>!x.startsWith('TEST: '));
     if(failed){
-      const names=args.files||[args.name].filter(Boolean);
+      const names=(Array.isArray(args.files)?args.files:typeof args.name==='string'?[args.name]:[]).filter(n=>typeof n==='string');
       space.pendingIssues.push('TEST: '+names.join(', ')+': '+(event.error||event.data?.error||'Inga körda assertions')+'. Felsök den aktuella kodfilen; kör inte samma fel oförändrat.');
       record(space,emit,'repair_required',{reason:'actual_test_failure',files:names,error:event.error||event.data?.error||'No assertions',nextRole:'repair'});
     }else{
