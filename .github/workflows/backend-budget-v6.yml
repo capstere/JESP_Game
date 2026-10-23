@@ -1,0 +1,65 @@
+name: Backend v6 bounded worker capacity acceptance
+on:
+  push:
+    branches: [feat/backend-v6]
+    paths: [.github/workflows/backend-budget-v6.yml, tools/budget_backend_v6.py]
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    outputs:
+      candidate: ${{ steps.source.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/backend-v6
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Apply role-specific budget and run 150 deterministic tests
+        run: |
+          python3 tools/budget_backend_v6.py
+          node --test tests/agent-unit.mjs tests/reasoning-v51.mjs tests/cap-v51.mjs tests/progress-v511.mjs tests/quality-v52.mjs tests/snapshot-v52.mjs tests/protocol-recovery-v52.mjs tests/backend-v6.mjs tests/backend-hardening-v6.mjs tests/backend-escalation-v6.mjs tests/backend-budget-v6.mjs
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add agents/backend.mjs tests/backend-v6.mjs index.html
+          if ! git diff --cached --quiet; then git commit -m 'Apply role-specific model budgets after observed inference timeout [skip ci]'; git push origin HEAD:feat/backend-v6; fi
+      - id: source
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+  verify:
+    needs: prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 17
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        include:
+          - name: lightning
+            model: nvidia/nemotron-3.5-lightning:free
+          - name: beam
+            model: kilo-auto/free
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.candidate }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: |
+          npm install --no-save --package-lock=false playwright@1.56.1
+          npx playwright install chromium
+          mkdir -p backend-variant-evidence
+          git rev-parse HEAD > backend-variant-evidence/candidate-commit.txt
+      - name: Actual free inference, no auth, unchanged full FPS acceptance
+        env:
+          AGENT_WORKER: ${{ matrix.model }}
+        run: node tests/backend-variant-v6.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: backend-v6-budget-${{ matrix.name }}
+          path: backend-variant-evidence/
