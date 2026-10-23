@@ -1,0 +1,27 @@
+name: Backend v6 independent optimization agent acceptance
+on:
+  push:
+    branches: [feat/backend-v6]
+    paths: [.github/workflows/agent-optimization-v6.yml, tests/agent-optimization-v6.mjs]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: |
+          npm install --no-save --package-lock=false playwright@1.56.1
+          npx playwright install chromium
+      - name: Real accountless agent and 28 independent solver checks
+        run: node tests/agent-optimization-v6.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: optimization-agent-v6
+          path: optimization-agent-evidence/
