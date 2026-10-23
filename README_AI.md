@@ -20,6 +20,8 @@ Kritikern måste bedöma varje kriterium, ange pass/fail/unknown, en saklig för
 
 Högst 24 beslut per körning, 18 som standard. Fortsätt-knappen behåller filer och kontrakt i samma flik. Omladdning raderar minnesarbetsytan. Exportera ZIP först. Export innehåller kontrakt, filer, kriteriegranskningar, källunderlag, anrop och fel.
 
+Tillfälliga serverfel 502/503/504 får högst två extra försök efter tjänstens väntetid (minst 31 sekunder). Längre begärd paus än 120 sekunder stoppar körningen. Autentiserings-/betalningsfel utlöser ingen sådan återhämtning.
+
 ## Begränsningar
 
 Samma modell kan göra misstag i alla roller. GPT-OSS-20B blir inte en större modell genom dessa ändringar. Tjänstens faktiskt tillåtna modeller, tokenbudget, resonemangsinställningar och kvoter är utanför appens kontroll. Auto begär medium och anpassar efter avklippning; tidigare live-test visade 1500 genererade token trots större begärd budget. Inget kringgående av tjänstens gränser används.
@@ -31,7 +33,7 @@ Gratisåtkomst är kvotbegränsad och kan upphöra. Ingen betalreserv används. 
 ## Verifiering
 
 ```sh
-node --test tests/agent-unit.mjs tests/reasoning-v51.mjs tests/cap-v51.mjs tests/progress-v511.mjs tests/quality-v52.mjs
+node --test tests/agent-unit.mjs tests/reasoning-v51.mjs tests/cap-v51.mjs tests/progress-v511.mjs tests/quality-v52.mjs tests/snapshot-v52.mjs
 ```
 
 De deterministiska testerna använder simulerade modeller. De kontrollerar bl.a. avvisning av plan i byggläge, underkänd tom granskning, versionskonflikter, saknade beroenden, obehörig kodkörning och bevarade funktioner från 5.1.1. Lokala webbläsartester använder simulerad AI men kör JS-sandboxen på riktigt.

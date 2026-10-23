@@ -50,5 +50,14 @@ try {
   if(gameErrors.length||errors.length)throw new Error('Browser errors: '+[...gameErrors,...errors].join('; '));
   if(requests.some(r=>r.authenticated)||!requests.length)throw new Error('Unexpected authentication or missing real inference');
   if(!(await page.locator('#status').getAttribute('class')).includes('success'))throw new Error('Agent did not meet its own completion checks: '+status);
-}catch(e){writeFileSync(dir+'/failure.json',JSON.stringify({mockedAI:false,error:String(e),requests,responses,errors},null,2));throw e;}
+}catch(e){
+  writeFileSync(dir+'/failure.json',JSON.stringify({mockedAI:false,error:String(e),requests,responses,errors},null,2));
+  try {
+    const lastUI=await page.evaluate(()=>({status:document.getElementById('status')?.textContent,answer:document.getElementById('answer')?.textContent,issues:document.getElementById('issues')?.textContent,log:document.getElementById('log')?.textContent,files:Object.fromEntries([...document.querySelectorAll('#files .file')].map(r=>[r.querySelector('strong').textContent,r.querySelector('pre').textContent]))}));
+    writeFileSync(dir+'/last-ui.json',JSON.stringify(lastUI,null,2));
+    await page.screenshot({path:dir+'/failure.png',fullPage:true});
+    if(await page.locator('#save').isEnabled()){const d=page.waitForEvent('download',{timeout:5000});await page.click('#save');await (await d).saveAs(dir+'/failure-workspace.zip');}
+  }catch(captureError){writeFileSync(dir+'/capture-error.txt',String(captureError));}
+  throw e;
+}
 finally{await browser.close();server.kill();generatedServer?.kill();}
