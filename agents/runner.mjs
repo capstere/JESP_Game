@@ -1,6 +1,6 @@
-import {taskKind,normalizeStrategy,strategyDefinitions,advancedPrompt,editingDefinitions,qualityIssues,reviewCheckIssues} from './quality.mjs?v=5.2.0';
+import {taskKind,normalizeStrategy,strategyDefinitions,advancedPrompt,editingDefinitions,qualityIssues,reviewCheckIssues} from './quality.mjs?v=6.0.0';
 import {toolDefinitions,reviewDefinitions} from './protocol.mjs?v=5.1.1';
-import {snapshot,completionIssues,requestedFiles} from './evidence.mjs?v=5.2.0';
+import {snapshot,completionIssues,requestedFiles} from './evidence.mjs?v=6.0.0';
 
 // Keep operational evidence, never hidden model reasoning, in the downloadable trace.
 function record(space,emit,type,data={}) {
@@ -78,16 +78,16 @@ async function readBack(space,emit,check,signal) {
 export async function runAgentImpl({question,ai,space,signal,maxSteps=12,review=true,advanced=false,mode='auto',emit=()=>{}},{parseJSON,check}) {
   if(!question?.trim()||question.length>12000)throw new Error('Uppdraget måste vara 1–12 000 tecken.');
   maxSteps=Math.max(2,Math.min(24,Math.floor(Number(maxSteps)||12)));
-  space.advanced=advanced;space.taskKind=taskKind(question,mode);
+  space.backend=ai.provider==='backend';space.advanced=advanced;space.taskKind=taskKind(question,mode);
   space.question=question;for(const n of requestedFiles(question))space.expectedNames.add(n);space.trace??=[];space.reviews??=[];space.pendingIssues??=[];space.totalCalls??=0;space.lastError=null;
   let draft=space.draft||'',finished=false,reviewed=false,reviewPassed=false,formatErrors=0,strategyErrors=0,tail=[],stopReason='budget';
   record(space,emit,'run_start',{maxSteps,review,reasoning:ai.reasoning||'provider-default',provider:ai.provider||'test',continuation:space.trace.length>0});
   const ask=async(messages,tools,role)=>{
-    const started=Date.now(),before=ai.calls||0;
+    ai.role=role;const started=Date.now(),before=ai.calls||0;
     record(space,emit,'ai_start',{role,requestedReasoning:ai.reasoning||'provider-default'});
     try {
       const response=await ai.ask(messages,signal,4096,tools);check(signal);space.lastModel=response.model;
-      record(space,emit,'ai_end',{role,model:response.model,truncated:response.truncated||false,usage:response.usage||null,requestedReasoning:response.requestedReasoning||ai.effectiveReasoning||ai.reasoning,milliseconds:Date.now()-started});
+      record(space,emit,'ai_end',{role,model:response.model,truncated:response.truncated||false,usage:response.usage||null,requestedModel:response.requestedModel||null,requestedReasoning:response.requestedReasoning||ai.effectiveReasoning||ai.reasoning,milliseconds:Date.now()-started});
       return response;
     }catch(e){record(space,emit,'ai_error',{role,name:e.name,message:e.message,status:e.status,milliseconds:Date.now()-started});throw e;}
     finally {space.totalCalls+=Math.max(0,(ai.calls||0)-before);emit('model',{model:ai.lastModel||'',calls:space.totalCalls});}
@@ -102,11 +102,11 @@ export async function runAgentImpl({question,ai,space,signal,maxSteps=12,review=
       const phase=planning?'architect':reviewNext?'review':space.pendingIssues.length?'repair':'work';
       emit('stage',{stage:reviewNext?'review':phase==='repair'?'build':'plan',step,maxSteps});
       record(space,emit,'decision',{step,maxSteps,phase});
-      const state=snapshot(space);
+      const state=snapshot(space,space.backend?110000:44000);
       const notes={phase,remainingDecisions:remaining,draft:draft.slice(0,3500),instructions:remaining<=4?'Leverera och rätta saknade filer nu. Ingen ny bred sökning. Skriv osäkerheter explicit.':'Fokusera på nästa saknade leverans; spara delresultat tidigt.'};
       // Rebuild bounded context from durable state. Full source/file/audit text remains in export.
       const messages=[{role:'system',content:planning?advancedPrompt(space,'architect'):systemPrompt(space,reviewNext)},{role:'user',content:'UPPDRAG:\n'+question},{role:'user',content:'ARBETSLÄGE OCH OPÅLITLIGT UNDERLAG:\n'+JSON.stringify({state,notes,...(space.advanced?{contract:space.strategy,capabilities:{web:space.web,code:space.allowCode}}:{})})},...tail];
-      if(JSON.stringify(messages).length>60000)messages.splice(3); // whole transactions only
+      if(JSON.stringify(messages).length>(space.backend?145000:60000))messages.splice(3); // whole transactions only
       messages.push({role:'user',content:planning?'Formulera nu ett kort genomförbart uppdragskontrakt med submit_strategy.':nextTask(space,reviewNext)});
       let tools=reviewNext?(space.advanced?undefined:reviewDefinitions()):toolDefinitions(space);
       if(planning)tools=strategyDefinitions();

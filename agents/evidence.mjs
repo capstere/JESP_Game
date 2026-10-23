@@ -65,7 +65,7 @@ export function verifyQuote(evidence,quote) {
   return {matched:q.length>=12 && normalizeQuote(evidence).includes(q),scope:'Kontrollerar bara om citatet förekommer. Bevisar inte slutsats, tolkning eller sanningshalt.'};
 }
 export function snapshot(space, limit=44000) {
-  let cap=6000, result;
+  let cap=space.backend?28000:6000, result;
   do {
     result={
       requiredFiles:[...space.expectedNames],

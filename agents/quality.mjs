@@ -33,7 +33,8 @@ export function reviewCheckIssues(decision,space) {
 export function advancedPrompt(space,role) {
  let prompt=basePrompt(space,role);
  if(role==='architect')prompt+='\nAcceptanskriterier ska beskriva uppdragets faktiska funktioner, inte enbart filantal/struktur. Ta med de centrala beteenden användaren begär, exempelvis rörelse, skott och återställning för ett spel eller rätt beräkningsresultat för analys. Beställ inte onödiga extra leveranser. Behåll svenska om uppdraget är svenskt. Fyll approach_a och approach_b med två olika konkreta alternativ som text. criteria är en lista med minst två strängar. Alla schemafält måste fyllas, men skriv kort.';
- if(role==='worker')prompt=prompt.replace('1500–3000','1200–1800')+'\nTjänstens svarstak är litet. Om en kodfil är större: write_file första delen, sedan append_file i separata beslut. Högst 1800 tecken kod per anrop. Skriv ALDRIG flera JSON-objekt i samma funktions arguments. Använd separata anrop eller separata beslut. Avsluta inte förrän de ihopbyggda filerna är kompletta och testade enligt tillåtelserna.';
+ if(role==='worker'&&!space.backend)prompt=prompt.replace('1500–3000','1200–1800')+'\nTjänstens svarstak är litet. Om en kodfil är större: write_file första delen, sedan append_file i separata beslut. Högst 1800 tecken kod per anrop. Skriv ALDRIG flera JSON-objekt i samma funktions arguments. Använd separata anrop eller separata beslut. Avsluta inte förrän de ihopbyggda filerna är kompletta och testade enligt tillåtelserna.';
+ if(space.backend)prompt+='\nBackendläget har större begärd svarbudget. Den äldre gränsen på 1500 token gäller INTE denna anslutning. Leverera kompletta användbara filer, upp till cirka 20000 tecken per beslut; använd edit_file/append_file bara när det behövs. Flera modeller kan användas: arbetare och kritiker behöver inte vara samma modell. Alla tester och slutsatser måste ändå ha konkreta belägg.';
  return prompt;
 }
 

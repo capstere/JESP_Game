@@ -1,14 +1,17 @@
-import {AI,Workspace,runAgent,freeModels,VERSION,check} from './core.mjs?v=5.2.0';
+import {backendModels,DEFAULT_WORKER,DEFAULT_CRITIC} from './backend.mjs?v=6.0.0';
+import {AI,Workspace,runAgent,freeModels,VERSION,check} from './core.mjs?v=6.0.0';
 import {executeJS} from './sandbox.mjs?v=5.2.0';
 import {zipFiles} from './zip.mjs';
 import {localAnswer,unloadLocal} from './local.mjs';
 const $=id=>document.getElementById(id);
+let backendReady=false;
 let busy=false,controller=null,space=null,result=null,question='',settings={};
 const node=(tag,text,cls)=>{const e=document.createElement(tag);if(text!==undefined)e.textContent=text;if(cls)e.className=cls;return e;};
 function status(text,cls=''){ $('status').textContent=text;$('status').className=cls; }
 function controls(){
- for(const id of ['run','test','checkKilo','provider','model','steps','advanced','taskMode','reasoning','web','review','code','prompt','downloadConsent'])$(id).disabled=busy;
+ for(const id of ['run','test','checkKilo','refreshBackend','workerModel','criticModel','provider','model','steps','advanced','taskMode','reasoning','web','review','code','prompt','downloadConsent'])$(id).disabled=busy;
  for(const e of document.querySelectorAll('[data-example]'))e.disabled=busy;
+ if($('provider').value==='backend'&&!backendReady){$('run').disabled=true;$('test').disabled=true;}
  $('cancel').disabled=!busy||!controller||controller.signal.aborted;
  $('run').textContent=busy?'Agenten arbetar…':'Starta agenten gratis';
  $('copy').disabled=!$('answer').textContent;
@@ -61,18 +64,19 @@ function explain(e){
 }
 async function run(test=false,resume=false){
  if(busy)return;
+ if($('provider').value==='backend'&&!backendReady){status('Backendens modellkatalog är inte tillgänglig. Uppdatera modellerna.','error');return;}
  const input=test?'Vad är 7 plus 5? Svara endast med talet.':resume?question:$('prompt').value.trim();
  if(resume&&$('prompt').value.trim()!==question){status('Återställ uppdragstexten innan du fortsätter, eller välj Starta för ett nytt uppdrag.','error');return;}
  if(!input){status('Skriv ett uppdrag först.');$('prompt').focus();return;}
  if($('provider').value==='local'&&!$('downloadConsent').checked){status('Godkänn modellnedladdningen i inställningarna först.','error');$('settings').open=true;return;}
  if(resume&&(settings.advanced!==$('advanced').checked||settings.mode!==$('taskMode').value)){status('Behåll samma arbetssätt och uppdragstyp när du fortsätter, eller starta ett nytt uppdrag.','error');return;}
  question=input;controller=new AbortController();const signal=controller.signal;busy=true;result=null;
- settings={advanced:$('advanced').checked,mode:$('taskMode').value,provider:$('provider').value,model:$('model').value,reasoning:$('reasoning').value,maxSteps:Number($('steps').value),web:$('web').checked,review:$('review').checked,allowCode:$('code').checked};
+ settings={workerModel:$('workerModel').value,criticModel:$('criticModel').value,advanced:$('advanced').checked,mode:$('taskMode').value,provider:$('provider').value,model:$('model').value,reasoning:$('reasoning').value,maxSteps:Number($('steps').value),web:$('web').checked,review:$('review').checked,allowCode:$('code').checked};
  if(resume){space.signal=signal;space.web=settings.web;space.allowCode=settings.allowCode;space.offline.clear();space.lastError=null;}else space=new Workspace({signal,emit,web:settings.web,allowCode:settings.allowCode,execute:executeJS,question});
  $('workspace').hidden=false;if(!resume){for(const id of ['answer','issues','log','files','sources','plan','contract'])$(id).replaceChildren();$('fileCount').textContent=$('sourceCount').textContent='0';$('answerNote').textContent='Arbetar. Verktygsresultat visas i loggen.';}controls();
  let lastStatusKey='';
  const transportStatus=text=>{status(text);const key=text.replace(/\d+/g,'#');if(key!==lastStatusKey){space.trace.push({time:new Date().toISOString(),type:'status',message:text});lastStatusKey=key;}};
- const ai=new AI({provider:$('provider').value,model:$('model').value,onStatus:transportStatus,local:localAnswer,reasoning:settings.reasoning});
+ const ai=new AI({workerModel:settings.workerModel,criticModel:settings.criticModel,provider:$('provider').value,model:$('model').value,onStatus:transportStatus,local:localAnswer,reasoning:settings.reasoning});
  try{
   if(test){const answer=await ai.ask([{role:'user',content:input}],signal,64);check(signal);space.totalCalls=ai.calls;space.trace.push({type:'connection_test',model:answer.model,calls:ai.calls,requestedReasoning:ai.reasoning});emit('done',{answer:answer.text,reviewed:false,reviewPassed:false,unfinished:false,calls:ai.calls,model:answer.model});emit('model',{model:answer.model,calls:ai.calls});status('Ett riktigt AI-svar mottogs. Detta testar anslutningen, inte hela agenten.','success');}
   else{result=await runAgent({question,ai,space,signal,maxSteps:Number($('steps').value),review:$('review').checked,advanced:settings.advanced,mode:settings.mode,emit});status(result.unfinished?'Uppdraget är ofullständigt. Se kvarvarande problem eller tryck Fortsätt.':'Leveranskontrollen är klar. Kontrollera resultat och filer.',result.unfinished?'warning':'success');}
@@ -82,7 +86,7 @@ async function run(test=false,resume=false){
 $('run').onclick=()=>run();$('test').onclick=()=>run(true);$('continue').onclick=()=>run(false,true);
 $('cancel').onclick=()=>{controller?.abort(new DOMException('Avbrutet av användaren','AbortError'));status('Avbryter…');controls();};
 $('prompt').addEventListener('keydown',e=>{if((e.ctrlKey||e.metaKey)&&e.key==='Enter'){e.preventDefault();run();}});
-$('provider').onchange=()=>{$('localNote').hidden=$('provider').value!=='local';$('kiloSettings').hidden=$('provider').value!=='kilo';if($('provider').value!=='local')unloadLocal();};
+$('provider').onchange=()=>{$('backendSettings').hidden=$('provider').value!=='backend';controls();$('localNote').hidden=$('provider').value!=='local';$('kiloSettings').hidden=$('provider').value!=='kilo';if($('provider').value!=='local')unloadLocal();};
 $('checkKilo').onclick=async()=>{
  if(busy)return;busy=true;controller=new AbortController();controls();status('Kontrollerar Kilos publika modellkatalog…');
  try{const models=await freeModels(controller.signal);if(!models.length)throw new Error('Inga bekräftade gratisvarianter hittades hos Kilo. Pollinations är fortfarande tillgängligt.');$('model').replaceChildren(...models.map(m=>{const o=node('option',m.name||m.id);o.value=m.id;return o;}));$('kiloOption').disabled=false;$('kiloOption').textContent='Kilo · katalogens gratisvarianter';status(`${models.length} gratisvarianter i Kilos katalog. Välj Kilo och testa anslutningen före ett större uppdrag.`,'success');}
@@ -101,3 +105,14 @@ $('save').onclick=()=>{
 const examples={research:'Sök i officiella källor vad WebAssembly är. Läs en relevant källa och skriv en kort svensk rapport med källhänvisningar. Spara rapporten som webassembly.md. Hitta inte på fakta om verktygen misslyckas.',code:'Bygg en liten körbar webbläsarapp för en inköpslista, inte en plan. Skapa index.html och logic.js. Användaren ska kunna lägga till, bocka av och ta bort varor. Separera logiken från DOM så att den kan testas utan webbläsare. Använd inga externa bibliotek. Testa normalfall, tom inmatning och borttagning av okänt id med test_js om jag har godkänt kodkörning. Annars ange tydligt att testen inte körts.',calculate:'Räkna (125 * 8) - 175 med calculate-verktyget. Skapa resultat.json med uttrycket och resultatet. Kontrollera filens JSON-syntax med inspect_file och sammanfatta resultatet.'};
 for(const e of document.querySelectorAll('[data-example]'))e.onclick=()=>{$('prompt').value=examples[e.dataset.example];$('prompt').focus();};
 window.JESP_AGENT_BOOTED=true;window.JESP_AI_BOOTED=true;status('Version 5.2.0 · Uppdragsanalys → implementation → kravgranskning. Ingen modellträning eller större molnmodell utlovas.');controls();
+
+async function refreshBackend(){
+ if(busy)return;backendReady=false;controls();$('backendInfo').textContent='Hämtar aktuella gratismodeller från backend…';
+ try{const models=await backendModels();if(!models.length)throw new Error('Inga tillgängliga gratis verktygsmodeller.');
+ for(const [id,preferred] of [['workerModel',DEFAULT_WORKER],['criticModel',DEFAULT_CRITIC]]){const old=$(id).value;$(id).replaceChildren(...models.map(m=>{const o=node('option',m.name||m.id);o.value=m.id;return o;}));$(id).value=models.some(m=>m.id===old)?old:models.some(m=>m.id===preferred)?preferred:models[0].id;}
+ backendReady=true;$('backendInfo').textContent=models.length+' verktygsmodeller med katalogpris 0. Backendens gränser: 90 anrop/timme per IP, 150/timme totalt. Leverantörens kvoter gäller också.';
+ }catch(e){$('backendInfo').textContent='Backend kunde inte kontrolleras: '+e.message+' Ingen betald reserv används.';}
+ finally{controls();}
+}
+$('refreshBackend').onclick=refreshBackend;
+refreshBackend();
