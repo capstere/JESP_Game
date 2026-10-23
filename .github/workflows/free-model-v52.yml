@@ -1,0 +1,51 @@
+name: Anonymous alternative model verification
+on:
+  push:
+    branches: [probe/free-model-v52]
+    paths: [.github/workflows/free-model-v52.yml]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install pinned browser
+        run: |
+          npm install --no-save --package-lock=false playwright@1.56.1
+          npx playwright install chromium
+      - name: Actual anonymous request from published origin
+        run: |
+          cat > probe.mjs <<'JS'
+          import {chromium} from 'playwright';
+          import {writeFileSync} from 'node:fs';
+          const browser=await chromium.launch({headless:true});
+          const page=await browser.newPage();
+          const errors=[];page.on('console',m=>{if(m.type()==='error')errors.push(m.text().slice(0,400));});
+          try{
+            await page.goto('https://capstere.github.io/JESP_Game/',{waitUntil:'domcontentloaded'});
+            const report=await page.evaluate(async()=>{
+              const base='https://ai-gateway.kilo.ai/api/v1';const out={origin:location.origin,authenticated:false};
+              try{
+                const r=await fetch(base+'/models',{credentials:'omit',signal:AbortSignal.timeout(30000)});out.catalogStatus=r.status;
+                if(!r.ok){out.error=(await r.text()).slice(0,400);return out;}
+                const j=await r.json();const free=(j.data||[]).filter(m=>(m.id.endsWith(':free')||m.id==='kilo-auto/free')&&m.pricing&&['prompt','completion'].every(k=>m.pricing[k]!==undefined&&m.pricing[k]!==null&&String(m.pricing[k]).trim()!==''&&Number(m.pricing[k])===0)&&Object.values(m.pricing).every(v=>v==null||Number(v)===0));
+                out.free=free.map(m=>({id:m.id,pricing:m.pricing}));
+                const selected=free.find(m=>/minimax|glm|deepseek|qwen/i.test(m.id))||free[0];if(!selected)return out;out.selected=selected.id;
+                const response=await fetch(base+'/chat/completions',{method:'POST',credentials:'omit',headers:{'Content-Type':'application/json'},signal:AbortSignal.timeout(90000),body:JSON.stringify({model:selected.id,messages:[{role:'user',content:'Calculate 19 plus 23. Call report_total with the correct value.'}],tools:[{type:'function',function:{name:'report_total',description:'Report the arithmetic result.',parameters:{type:'object',properties:{total:{type:'number'}},required:['total']}}}],max_tokens:2048,stream:false})});
+                out.status=response.status;const data=await response.json();const c=data.choices?.[0];out.model=data.model;out.finish=c?.finish_reason;out.text=c?.message?.content;out.tool_calls=c?.message?.tool_calls;out.error=data.error;out.usage=data.usage;
+              }catch(e){out.error=String(e);}return out;
+            });
+            report.browserErrors=errors;report.at=new Date().toISOString();writeFileSync('alternative-model.json',JSON.stringify(report,null,2));console.log('ANONYMOUS_PROBE',JSON.stringify(report));
+          }finally{await browser.close();}
+          JS
+          node probe.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: alternative-model-v52
+          path: alternative-model.json
