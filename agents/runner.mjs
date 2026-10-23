@@ -80,7 +80,7 @@ export async function runAgentImpl({question,ai,space,signal,maxSteps=12,review=
   maxSteps=Math.max(2,Math.min(24,Math.floor(Number(maxSteps)||12)));
   space.advanced=advanced;space.taskKind=taskKind(question,mode);
   space.question=question;for(const n of requestedFiles(question))space.expectedNames.add(n);space.trace??=[];space.reviews??=[];space.pendingIssues??=[];space.totalCalls??=0;space.lastError=null;
-  let draft=space.draft||'',finished=false,reviewed=false,reviewPassed=false,formatErrors=0,tail=[],stopReason='budget';
+  let draft=space.draft||'',finished=false,reviewed=false,reviewPassed=false,formatErrors=0,strategyErrors=0,tail=[],stopReason='budget';
   record(space,emit,'run_start',{maxSteps,review,reasoning:ai.reasoning||'provider-default',provider:ai.provider||'test',continuation:space.trace.length>0});
   const ask=async(messages,tools,role)=>{
     const started=Date.now(),before=ai.calls||0;
@@ -114,7 +114,8 @@ export async function runAgentImpl({question,ai,space,signal,maxSteps=12,review=
       const answer=await ask(messages,tools,reviewNext?'critic':phase);
       let decision;
       try {
-        if(answer.truncated)throw new Error('Svaret klipptes av av tjänsten. Gör endast ETT kort verktygsanrop nästa gång, högst 100 ord filtext. Inga åtgärder ur det avklippta svaret har körts.');
+        if(answer.protocolError)throw new Error(answer.protocolError);
+        if(answer.truncated)throw new Error('Svaret klipptes av av tjänsten. Gör endast ETT kort verktygsanrop nästa gång, en kort kod-/textdel som sedan kan utökas. Inga åtgärder ur det avklippta svaret har körts.');
         decision=parseJSON(answer.text);
         if(!reviewNext && !planning && !decision.kind && typeof decision.answer==='string')decision.kind='final';
         if(!reviewNext && !planning && !['actions','final'].includes(decision.kind))throw new Error('Beslutet saknar giltig kind.');
@@ -131,7 +132,7 @@ export async function runAgentImpl({question,ai,space,signal,maxSteps=12,review=
           space.strategy=normalizeStrategy(raw,space,name=>{if(!/^[\p{L}\p{N}][\p{L}\p{N} ._-]{0,99}\.(md|txt|html|css|js|mjs|json|csv|svg|py|xml|yaml|yml)$/iu.test(name)||name.includes('..'))throw new Error('Ogiltigt leveransnamn: '+name);});
           for(const n of space.strategy.deliverables)space.expectedNames.add(n);
           emit('plan',space.strategy.steps);emit('contract',space.strategy);record(space,emit,'strategy',space.strategy);space.pendingIssues=[];
-        }catch(e){space.pendingIssues=['STRATEGI: '+e.message];emit('warning',e.message);record(space,emit,'strategy_error',{message:e.message});}
+        }catch(e){strategyErrors++;space.pendingIssues=['STRATEGI: '+e.message];emit('warning',e.message);record(space,emit,'strategy_error',{message:e.message,attempt:strategyErrors,decision:JSON.stringify(decision).slice(0,7000)});if(strategyErrors>=3){stopReason='strategy';break;}}
         tail=[];continue;
       }
       if(reviewNext) {
@@ -184,7 +185,7 @@ export async function runAgentImpl({question,ai,space,signal,maxSteps=12,review=
   const gates=gatesFor(draft);
   const issues=finished?[]:[...new Set([...gates,...space.pendingIssues, ...(review&&!reviewPassed?['Ingen godkänd slutgranskning av den aktuella versionen.']:[])])];
   if(!finished&&!preserveDraft){
-    draft='Ofullständigt uppdrag. '+(stopReason==='format'?'AI:n gav upprepade formatfel.':'Beslutsbudgeten tog slut.')+'\n\nSkapade filer: '+([...space.files.keys()].join(', ')||'inga')+'.\n'+issues.map(x=>'• '+x).join('\n')+'\n\nDelresultaten finns kvar. Fortsätt körningen för att arbeta vidare.';
+    draft='Ofullständigt uppdrag. '+(stopReason==='format'?'AI:n gav upprepade formatfel.':stopReason==='strategy'?'Uppdragsanalysen kunde inte valideras efter tre försök.':'Beslutsbudgeten tog slut.')+'\n\nSkapade filer: '+([...space.files.keys()].join(', ')||'inga')+'.\n'+issues.map(x=>'• '+x).join('\n')+'\n\nDelresultaten finns kvar. Fortsätt körningen för att arbeta vidare.';
   }
   space.draft=draft;
   const result={answer:draft,reviewed,reviewPassed,unfinished:!finished,stopReason,issues,calls:space.totalCalls,model:ai.lastModel,files:[...space.files.values()],sources:[...space.sources.values()],audit:space.audit,reviews:space.reviews,strategy:space.strategy||null,taskKind:space.taskKind};
