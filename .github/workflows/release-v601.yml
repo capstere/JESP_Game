@@ -25,13 +25,13 @@ jobs:
         with:
           node-version: '22'
       - run: |
-          python3 tools/prepare_release_v601.py
+          if ! grep -q "VERSION='6.0.1'" agents/core.mjs; then python3 tools/prepare_release_v601.py; fi
           node --test tests/agent-unit.mjs tests/reasoning-v51.mjs tests/cap-v51.mjs tests/progress-v511.mjs tests/quality-v52.mjs tests/snapshot-v52.mjs tests/protocol-recovery-v52.mjs tests/backend-v6.mjs tests/backend-hardening-v6.mjs tests/backend-escalation-v6.mjs tests/backend-budget-v6.mjs tests/backend-argument-guard-v6.mjs tests/final-review-v601.mjs
       - id: commit
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add agents index.html tests/agent-optimization-v6.mjs tests/backend-live-v6.mjs .github/workflows/agent-regression.yml AI_TEST_RESULTS.json
+          git add agents index.html tests/agent-optimization-v6.mjs tests/backend-live-v6.mjs AI_TEST_RESULTS.json
           if ! git diff --cached --quiet; then git commit -m 'Require evidence-backed final explanation and retain computation proofs [skip ci]'; git push origin HEAD:feat/backend-v6; fi
           echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
   live:
