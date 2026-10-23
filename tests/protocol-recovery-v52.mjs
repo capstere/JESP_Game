@@ -23,3 +23,9 @@ test('three invalid strategies cannot consume the full task budget',async()=>{
  const r=await runAgent({question:'Bygg en app',space:w,ai,signal:new AbortController().signal,advanced:true,maxSteps:24});
  assert.equal(r.calls,3);assert.equal(r.stopReason,'strategy');assert.equal(r.unfinished,true);assert.equal(w.files.size,0);
 });
+
+import {transientDelay} from '../agents/transport.mjs';
+test('observed HTTP 500 is a bounded transient failure, not a reason to switch to paid service',()=>{
+ assert.equal(transientDelay({status:500,retryAfter:10},0),31000);
+ assert.equal(transientDelay({status:500,retryAfter:10},2),null);
+});

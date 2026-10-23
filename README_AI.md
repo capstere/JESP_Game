@@ -20,7 +20,7 @@ Kritikern måste bedöma varje kriterium, ange pass/fail/unknown, en saklig för
 
 Högst 24 beslut per körning, 18 som standard. Fortsätt-knappen behåller filer och kontrakt i samma flik. Omladdning raderar minnesarbetsytan. Exportera ZIP först. Export innehåller kontrakt, filer, kriteriegranskningar, källunderlag, anrop och fel.
 
-Tillfälliga serverfel 502/503/504 får högst två extra försök efter tjänstens väntetid (minst 31 sekunder). Längre begärd paus än 120 sekunder stoppar körningen. Autentiserings-/betalningsfel utlöser ingen sådan återhämtning.
+Tillfälliga serverfel 500/502/503/504 får högst två extra försök efter tjänstens väntetid (minst 31 sekunder). Längre begärd paus än 120 sekunder stoppar körningen. Autentiserings-/betalningsfel utlöser ingen sådan återhämtning.
 
 ## Begränsningar
 
@@ -33,9 +33,19 @@ Gratisåtkomst är kvotbegränsad och kan upphöra. Ingen betalreserv används. 
 ## Verifiering
 
 ```sh
-node --test tests/agent-unit.mjs tests/reasoning-v51.mjs tests/cap-v51.mjs tests/progress-v511.mjs tests/quality-v52.mjs tests/snapshot-v52.mjs
+node --test tests/agent-unit.mjs tests/reasoning-v51.mjs tests/cap-v51.mjs tests/progress-v511.mjs tests/quality-v52.mjs tests/snapshot-v52.mjs tests/protocol-recovery-v52.mjs
 ```
 
 De deterministiska testerna använder simulerade modeller. De kontrollerar bl.a. avvisning av plan i byggläge, underkänd tom granskning, versionskonflikter, saknade beroenden, obehörig kodkörning och bevarade funktioner från 5.1.1. Lokala webbläsartester använder simulerad AI men kör JS-sandboxen på riktigt.
 
 Det separata `build-v52.yml` kör en riktig anonym bygguppgift. En separat webbläsare öppnar den genererade FPS-prototypen och testar rörelse, rotation, skott/poäng, återställning och icke-tom canvas. Testresultatet ska läsas från körningens faktiska logg/artefakt; förekomsten av testfilen betyder INTE att testet har passerat. Ingen modellgenererad kod körs i Node eller med repo-/kontoautentisering; spelprovet serveras separat med externa webbförfrågningar blockerade.
+
+## Status vid leverans 2026-10-23
+
+117 deterministiska tester passerar (simulerad AI där modellen behövs). Nio lokala webbläsarkontroller passerar, med simulerad AI men riktig isolerad JS-körning. Detta bevisar inte generell resonemangsförmåga.
+
+Tre verkliga FPS-byggprov genomfördes med gpt-oss-20b utan konto eller API-nyckel. Inget komplett FPS-bygge blev godkänt: första körningen stoppades av HTTP 503, andra fastnade i analysformat och stoppades senare av ett felaktigt native-anrop efter två kodfiler. De kodfelen rättades. Tredje försöket klarade uppdragsanalysen direkt men nästa anrop fick HTTP 500. Den slutliga lilla ändringen ger även HTTP 500 samma begränsade återhämtning som övriga tillfälliga serverfel; den har regressionstestats men inte ett nytt fullständigt live-FPS-prov. Se AI_TEST_RESULTS.json för exakta körningar.
+
+Uppdragsanalys som inte kan valideras får högst tre försök i samma körning, inte en obegränsad rättningsloop. Ogiltiga native-anrop körs aldrig; nästa beslut kan använda samma validerade JSON-format utan native-funktioner. Detta återanvänder samma provider, inte en ny tjänst.
+
+Kilo kontrollerades från GitHub Pages-domänen och blockerades av CORS. Ingen starkare gratis molnmodell har därför verifierats eller blivit standard. Versionen levererar nya redigerings-, krav- och testfunktioner, **inte ett löfte om pålitlig autonom spelutveckling**.
