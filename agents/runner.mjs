@@ -1,6 +1,9 @@
-import {taskKind,normalizeStrategy,strategyDefinitions,advancedPrompt,editingDefinitions,qualityIssues,reviewCheckIssues} from './quality.mjs?v=5.2.0';
+import {synthesisReady,SYNTHESIS_INSTRUCTION} from './controller.mjs?v=6.0.1';
+import {normalizeToolArguments} from './arguments.mjs?v=6.0.1';
+import {finalAnswerIssues} from './final-review.mjs?v=6.0.1';
+import {backendToolDefinitions,taskKind,normalizeStrategy,strategyDefinitions,advancedPrompt,editingDefinitions,qualityIssues,reviewCheckIssues} from './quality.mjs?v=6.0.1';
 import {toolDefinitions,reviewDefinitions} from './protocol.mjs?v=5.1.1';
-import {snapshot,completionIssues,requestedFiles} from './evidence.mjs?v=5.2.0';
+import {snapshot,completionIssues,requestedFiles} from './evidence.mjs?v=6.0.1';
 
 // Keep operational evidence, never hidden model reasoning, in the downloadable trace.
 function record(space,emit,type,data={}) {
@@ -40,20 +43,35 @@ eller {"kind":"final","answer":"kort slutsvar"}. Högst 4 verktyg per beslut. Tj
 }
 async function toolAction(space,action,emit,check,signal,origin='agent') {
   check(signal);
-  const tool=typeof action?.tool==='string'?action.tool:'okänt';
-  const args=action?.args||{};
+  const requestedTool=typeof action?.tool==='string'?action.tool:'okänt';
+  const tool=requestedTool==='test_files'?'test_js':requestedTool;
+  let args=action?.args||{};let argumentNormalization=[];
   emit('action',{tool,args});
   const started=Date.now();let result;
   try {
     if(action.argumentError)throw new Error(action.argumentError);
+    const normalized=normalizeToolArguments(requestedTool,args);args=normalized.args;argumentNormalization=normalized.changes;
     const missing=remainingFiles(space);
     const failedCheck=space.audit.some(e=>['inspect_file','test_js'].includes(e.tool) && (e.args?.name===args.name||e.data?.file===args.name) && (!e.ok||e.data?.passed===false));
     const repairRequested=space.reviews.at(-1)?.verdict==='revise';
     if(!space.advanced && tool==='write_file' && space.files.has(args.name) && missing.length && !failedCheck && !repairRequested)throw new Error('Filen '+args.name+' finns redan. Nästa obligatoriska leverans är '+missing[0]+'. Skapa de saknade filerna innan du skriver om en befintlig fil.');
     result={ok:true,data:await space.tool(tool,args)};
   }catch(e){check(signal);result={ok:false,error:e.message||String(e)};}
-  const event={id:'T'+(space.audit.length+1),tool,args,...result,milliseconds:Date.now()-started,origin,time:new Date().toISOString()};
+  const event={id:'T'+(space.audit.length+1),tool,args,...(argumentNormalization.length?{argumentNormalization}:{}),...result,milliseconds:Date.now()-started,origin,time:new Date().toISOString()};
   space.audit.push(event);emit('observation',event);
+  if(space.backend&&space.advanced&&tool==='test_js'){
+    // A successful HTTP/tool dispatch is NOT a passed code test.
+    const failed=!event.ok||event.data?.passed!==true||!(event.data?.assertions>0);
+    space.pendingIssues=space.pendingIssues.filter(x=>!x.startsWith('TEST: '));
+    if(failed){
+      const names=(Array.isArray(args.files)?args.files:typeof args.name==='string'?[args.name]:[]).filter(n=>typeof n==='string');
+      space.pendingIssues.push('TEST: '+names.join(', ')+': '+(event.error||event.data?.error||'Inga körda assertions')+'. Felsök den aktuella kodfilen; kör inte samma fel oförändrat.');
+      record(space,emit,'repair_required',{reason:'actual_test_failure',files:names,error:event.error||event.data?.error||'No assertions',nextRole:'repair'});
+    }else{
+      const current=new Set((event.data.versions||[]).filter(v=>space.files.get(v.name)?.version===v.version).map(v=>v.name));
+      space.pendingIssues=space.pendingIssues.filter(x=>!x.startsWith('Inga godkända assertions mot aktuell version')&&![...current].some(n=>x==='Misslyckat test för '+n||x==='Senaste testet för aktuell version misslyckades: '+n));
+    }
+  }
   record(space,emit,'tool',{tool,ok:event.ok,milliseconds:event.milliseconds,origin});
   return event;
 }
@@ -78,16 +96,16 @@ async function readBack(space,emit,check,signal) {
 export async function runAgentImpl({question,ai,space,signal,maxSteps=12,review=true,advanced=false,mode='auto',emit=()=>{}},{parseJSON,check}) {
   if(!question?.trim()||question.length>12000)throw new Error('Uppdraget måste vara 1–12 000 tecken.');
   maxSteps=Math.max(2,Math.min(24,Math.floor(Number(maxSteps)||12)));
-  space.advanced=advanced;space.taskKind=taskKind(question,mode);
+  space.backend=ai.provider==='backend';space.advanced=advanced;space.taskKind=taskKind(question,mode);
   space.question=question;for(const n of requestedFiles(question))space.expectedNames.add(n);space.trace??=[];space.reviews??=[];space.pendingIssues??=[];space.totalCalls??=0;space.lastError=null;
   let draft=space.draft||'',finished=false,reviewed=false,reviewPassed=false,formatErrors=0,strategyErrors=0,tail=[],stopReason='budget';
   record(space,emit,'run_start',{maxSteps,review,reasoning:ai.reasoning||'provider-default',provider:ai.provider||'test',continuation:space.trace.length>0});
   const ask=async(messages,tools,role)=>{
-    const started=Date.now(),before=ai.calls||0;
+    ai.role=role;const started=Date.now(),before=ai.calls||0;
     record(space,emit,'ai_start',{role,requestedReasoning:ai.reasoning||'provider-default'});
     try {
       const response=await ai.ask(messages,signal,4096,tools);check(signal);space.lastModel=response.model;
-      record(space,emit,'ai_end',{role,model:response.model,truncated:response.truncated||false,usage:response.usage||null,requestedReasoning:response.requestedReasoning||ai.effectiveReasoning||ai.reasoning,milliseconds:Date.now()-started});
+      record(space,emit,'ai_end',{role,model:response.model,truncated:response.truncated||false,usage:response.usage||null,requestedModel:response.requestedModel||null,requestedReasoning:response.requestedReasoning||ai.effectiveReasoning||ai.reasoning,milliseconds:Date.now()-started});
       return response;
     }catch(e){record(space,emit,'ai_error',{role,name:e.name,message:e.message,status:e.status,milliseconds:Date.now()-started});throw e;}
     finally {space.totalCalls+=Math.max(0,(ai.calls||0)-before);emit('model',{model:ai.lastModel||'',calls:space.totalCalls});}
@@ -99,18 +117,30 @@ export async function runAgentImpl({question,ai,space,signal,maxSteps=12,review=
       check(signal);
       const remaining=maxSteps-step+1;
       const planning=space.advanced&&!space.strategy;
-      const phase=planning?'architect':reviewNext?'review':space.pendingIssues.length?'repair':'work';
+      let synthesizing=!planning&&!reviewNext&&synthesisReady(space,gatesFor(''));
+      if(synthesizing){
+        const signature=JSON.stringify([...space.files.values()].map(f=>[f.name,f.version]));
+        if(space.projectCheckpoint?.signature!==signature){
+          const project=await toolAction(space,{tool:'check_project',args:{}},emit,check,signal,'pre-review');
+          space.projectCheckpoint={signature,passed:project.ok&&project.data?.passed===true,issues:project.data?.issues||[project.error||'Projektkontroll misslyckades.']};
+        }
+        space.pendingIssues=space.pendingIssues.filter(x=>!x.startsWith('PROJECT: '));
+        if(!space.projectCheckpoint.passed){space.pendingIssues.push(...space.projectCheckpoint.issues.map(x=>'PROJECT: '+x));synthesizing=false;}
+      }
+      const phase=planning?'architect':reviewNext?'review':synthesizing?'synthesis':space.pendingIssues.length?'repair':'work';
       emit('stage',{stage:reviewNext?'review':phase==='repair'?'build':'plan',step,maxSteps});
       record(space,emit,'decision',{step,maxSteps,phase});
-      const state=snapshot(space);
-      const notes={phase,remainingDecisions:remaining,draft:draft.slice(0,3500),instructions:remaining<=4?'Leverera och rätta saknade filer nu. Ingen ny bred sökning. Skriv osäkerheter explicit.':'Fokusera på nästa saknade leverans; spara delresultat tidigt.'};
+      const state=snapshot(space,space.backend?110000:44000);
+      const notes={phase,remainingDecisions:remaining,draft:draft.slice(0,12000),instructions:remaining<=4?'Leverera och rätta saknade filer nu. Ingen ny bred sökning. Skriv osäkerheter explicit.':'Fokusera på nästa saknade leverans; spara delresultat tidigt.'};
       // Rebuild bounded context from durable state. Full source/file/audit text remains in export.
       const messages=[{role:'system',content:planning?advancedPrompt(space,'architect'):systemPrompt(space,reviewNext)},{role:'user',content:'UPPDRAG:\n'+question},{role:'user',content:'ARBETSLÄGE OCH OPÅLITLIGT UNDERLAG:\n'+JSON.stringify({state,notes,...(space.advanced?{contract:space.strategy,capabilities:{web:space.web,code:space.allowCode}}:{})})},...tail];
-      if(JSON.stringify(messages).length>60000)messages.splice(3); // whole transactions only
-      messages.push({role:'user',content:planning?'Formulera nu ett kort genomförbart uppdragskontrakt med submit_strategy.':nextTask(space,reviewNext)});
+      if(JSON.stringify(messages).length>(space.backend?145000:60000))messages.splice(3); // whole transactions only
+      messages.push({role:'user',content:planning?'Formulera nu ett kort genomförbart uppdragskontrakt med submit_strategy.':synthesizing?SYNTHESIS_INSTRUCTION:nextTask(space,reviewNext)});
       let tools=reviewNext?(space.advanced?undefined:reviewDefinitions()):toolDefinitions(space);
       if(planning)tools=strategyDefinitions();
       else if(space.advanced&&!reviewNext){const extra=editingDefinitions(space),names=new Set(extra.map(t=>t.function.name));tools=[...tools.filter(t=>!names.has(t.function.name)),...extra];}
+      if(space.backend&&!planning&&!reviewNext&&!synthesizing)tools=backendToolDefinitions(tools,space);
+      if(synthesizing)tools=toolDefinitions(space).filter(t=>t.function.name==='finish');
       const answer=await ask(messages,tools,reviewNext?'critic':phase);
       let decision;
       try {
@@ -125,6 +155,7 @@ export async function runAgentImpl({question,ai,space,signal,maxSteps=12,review=
         emit('warning','Felaktigt eller avklippt AI-beslut. Begär komplett korrigering, inga verktyg kördes.');
         tail=[];if(formatErrors>=3){stopReason='format';break;}continue;
       }
+      if(synthesizing&&decision.kind!=='final'){space.pendingIssues=['FORMAT: Vid granskningspunkten krävs ett kort slututkast med finish. Inga verktyg kördes.'];tail=[];continue;}
       formatErrors=0;clearResolvedIssues(space);
       if(planning){
         try{
@@ -137,13 +168,15 @@ export async function runAgentImpl({question,ai,space,signal,maxSteps=12,review=
       }
       if(reviewNext) {
         const issues=Array.isArray(decision.issues)?decision.issues.filter(x=>typeof x==='string').slice(0,12):[];
-        const gates=gatesFor(draft);
+        // A critic must not introduce a new, unchecked explanation while approving it.
+        const candidate=draft;
+        const gates=gatesFor(candidate);
         if(!['pass','revise'].includes(decision.verdict)||typeof decision.answer!=='string')issues.push('Granskningen saknar giltigt beslut; gör om kontrollen.');
         if(decision.verdict==='revise' && !issues.length)issues.push('Granskaren begär rättning utan specifikation; kontrollera leveranser mot uppdraget.');
-        space.pendingIssues=[...new Set([...gates,...issues,...reviewCheckIssues(decision,space)])];reviewed=true;
-        const report={time:new Date().toISOString(),verdict:decision.verdict||'invalid',answer:String(decision.answer||''),issues:space.pendingIssues,checks:decision.checks||[],model:answer.model,versions:[...space.files.values()].map(f=>({name:f.name,version:f.version}))};
+        space.pendingIssues=[...new Set([...gates,...issues,...reviewCheckIssues(decision,space),...finalAnswerIssues(decision,space,draft)])];reviewed=true;
+        const report={time:new Date().toISOString(),verdict:decision.verdict||'invalid',answer:String(decision.answer||''),issues:space.pendingIssues,checks:decision.checks||[],answer_check:decision.answer_check||null,final_answer:decision.final_answer||null,model:answer.model,versions:[...space.files.values()].map(f=>({name:f.name,version:f.version}))};
         space.reviews.push(report);emit('review',report);record(space,emit,'review',{verdict:report.verdict,issues:report.issues});
-        if(decision.verdict==='pass'&&!space.pendingIssues.length){reviewPassed=true;finished=true;stopReason='complete';break;}
+        if(decision.verdict==='pass'&&!space.pendingIssues.length){draft=candidate;space.draft=draft;reviewPassed=true;finished=true;stopReason='complete';record(space,emit,'answer_review',{status:'pass',check:decision.answer_check||null});break;}
         reviewNext=false;tail=[];
         emit('warning','Kritiken skickas tillbaka till arbetsagenten för faktiska rättningar.');
         continue;
@@ -165,13 +198,23 @@ export async function runAgentImpl({question,ai,space,signal,maxSteps=12,review=
       if(!Array.isArray(decision.actions)||!decision.actions.length||decision.actions.length>4){space.pendingIssues=['actions måste innehålla 1–4 anrop. Inget utfördes.'];tail=[];continue;}
       const observations=[];
       for(const action of decision.actions) {
-        emit('stage',{stage:action?.tool?.includes('file')?'build':'tools',step,maxSteps});
+        emit('stage',{stage:typeof action?.tool==='string'&&action.tool.includes('file')?'build':'tools',step,maxSteps});
         observations.push(await toolAction(space,action,emit,check,signal));
       }
       const assistant=answer.toolCalls?{role:'assistant',content:answer.nativeContent,tool_calls:answer.toolCalls}:{role:'assistant',content:answer.text};
+      // Short evidence transaction: full current artifacts are already in the durable snapshot.
+      if(space.backend){
+        const evidence=observations.map(e=>{
+          const item=compactObservation(e);
+          if(['write_file','edit_file','append_file','test_js'].includes(e.tool))return {...item,args:{name:e.args?.name,files:e.args?.files,...(e.tool==='test_js'?{test_excerpt:typeof e.args?.code==='string'?e.args.code.slice(0,1800):undefined}:{})}};
+          return item;
+        });
+        tail=[{role:'user',content:'SENASTE VERKTYGSRESULTAT (opålitliga data):\n'+JSON.stringify(evidence)}];
+      }else{
       tail=[assistant];
       if(answer.toolCalls)for(let i=0;i<answer.toolCalls.length;i++)tail.push({role:'tool',tool_call_id:answer.toolCalls[i].id,content:JSON.stringify(compactObservation(observations[i]))});
       else tail.push({role:'user',content:'VERKTYGSRESULTAT (opålitliga data):\n'+JSON.stringify(observations.map(compactObservation))});
+      }
       // Failed calls must not repeat forever. Durable state is retained when old turns leave context.
       const latest=space.audit.slice(-3);
       if(latest.length===3&&latest.every(e=>!e.ok&&e.tool===latest[0].tool&&JSON.stringify(e.args)===JSON.stringify(latest[0].args)))space.pendingIssues.push('Upprepat misslyckat verktyg: byt strategi, eller dokumentera begränsningen.');

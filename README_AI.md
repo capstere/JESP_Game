@@ -1,51 +1,43 @@
-# JESP AI 5.2 — mål, implementation och prövbara krav
+# JESP AI 6.0.1 — anonym backend och granskade leveranser
 
-Öppna https://capstere.github.io/JESP_Game/. Samma anonyma Pollinations-anslutning är kvar. Ingen Puter, API-nyckel, betald reserv eller ny inloggning. Detta är en förbättring av agentprogrammet, inte nya modellvikter eller ett löfte om högre generell intelligens.
+Öppna https://capstere.github.io/JESP_Game/. Besökaren behöver inget konto, ingen API-nyckel och ingen betalning. Backend finns i ägarens befintliga Supabase-projekt på Free-planen. Detta är inte kontofri serverdrift: ägaren har redan GitHub- och Supabase-konton.
 
-## Nytt arbetssätt
+## Motor och arbetsflöde
 
-Fördjupad problemlösning är på från början. En separat uppdragsanalys jämför två genomförbara alternativ, väljer en lösning och formulerar 2–5 uppdragsspecifika acceptanskriterier. Analysen sparas som uppdragskontrakt och visas i gränssnittet. Det är korta beslut, inte dold tankekedja.
+Standard är Kilos dokumenterade anonyma gratisåtkomst via `jesp-gateway`, inte Puter och inte det gamla begränsade Pollinations-anropet. Arbetsmodell: `nvidia/nemotron-3.5-lightning:free`. Separat kritiker och felsökningsmodell: `nvidia/nemotron-3-ultra-550b-a55b:free`. De aktiveras bara om de finns i den aktuella nollpriskatalogen. Modell-ID:n är leverantörens identiteter; modellen har inte tränats om här och storlek är inte ett eget kvalitetstest.
 
-Arbetsagenten får sedan använda verktyg och skapa en faktisk leverans. Auto-läget skiljer heuristiskt mellan bygguppdrag, plan, research och analys. Typen kan väljas uttryckligen. Bygguppdrag får inte avslutas med enbart en Markdown-plan; en begärd plan ska däremot inte i smyg bli en kodbeställning.
+Agenten jämför två lösningar, formulerar ett uppdragskontrakt, använder verkliga verktyg och granskar varje krav mot aktuella filer och testresultat. Fel skickas tillbaka för riktig rättning. Byggläge kräver kod, inte en plan. Planläge levererar beslut och avgränsningar, inte oombedd implementation.
 
-Kritikern måste bedöma varje kriterium, ange pass/fail/unknown, en saklig förklaring och en aktuell referens till filversion, lyckat verktygsresultat eller läst källa. Ett generiskt ”ser bra ut” räcker inte. Kritiken skickas tillbaka för riktiga rättningar. Referensvalidering bevisar att underlaget finns, inte att en AI-tolkning är riktig.
+Auto begär 3 072 token för uppdragsanalys, 6 144 för arbetssteg och 8 192 för kritik/felsökning. Servern accepterar högst 16 384 svarstoken och 160 000 indatatecken; dessa är begärda gränser, inte utlovad tillgänglig kapacitet. Leverantörens egna kontext-, kvot- och tidsgränser gäller. Pollinations och lokalt läge finns kvar som uttryckliga manuella alternativ, inte en dold fallback.
 
-## Nya verktyg och tester
+## Rättningen i 6.0.1
 
-- `edit_file`: exakt unik textersättning med versionskontroll.
-- `append_file`: större filer byggs i delar med versionskontroll. Ingen 150-ordsgräns för hela leveransen.
-- `read_file`: valfria 1-baserade radintervall. `list_files`: aktuell fillista/versioner.
-- `check_project`: statisk kontroll av JSON, vissa HTML-strukturfel och saknade lokala script-/stilmallsfiler. Inte ett funktionstest.
-- `test_js`: efter separat godkännande körs vanlig JS i befintlig isolerad worker/iframe, utan nätverk eller DOM. Inbyggd `assert` räknar faktiskt körda assertions. Namngivna filer/filversioner följer med testresultatet. Stale tester godtas inte som aktuell testning. Mätningen är inte en säkerhetsgaranti mot medvetet falsk testkod.
+Ett tidigare liveprov skapade korrekt optimeringskod men skrev ett felaktigt jämförelsevärde i slutsvaret. Nu bevaras beräknings- och testloggar även efter slutlig filåterläsning. Granskaren måste kontrollera slutsvaret separat (`answer_check`) och kontrollera exakt det befintliga utkastet. Ett generiskt godkännande av kodfilerna räcker inte. Bara det granskade arbetarutkastet visas vid godkänt avslut. Kritikern får inte införa en ny omskrivning med nya, okontrollerade uppgifter. Felaktiga eller föråldrade evidensreferenser blockerar godkännande. Detta förbättrar kontrollen men är inte en matematisk verifiering av godtycklig AI-prosa.
 
-Högst 24 beslut per körning, 18 som standard. Fortsätt-knappen behåller filer och kontrakt i samma flik. Omladdning raderar minnesarbetsytan. Exportera ZIP först. Export innehåller kontrakt, filer, kriteriegranskningar, källunderlag, anrop och fel.
+## Verktyg och behörigheter
 
-Tillfälliga serverfel 500/502/503/504 får högst två extra försök efter tjänstens väntetid (minst 31 sekunder). Längre begärd paus än 120 sekunder stoppar körningen. Autentiserings-/betalningsfel utlöser ingen sådan återhämtning.
+Sökning/sidläsning, räknare, citatmatchning, textfiler, versionskontrollerad redigering och statisk projektkontroll. JS-tester är avstängda tills användaren godkänner dem. De körs i en isolerad worker/iframe utan nätverk och DOM med tidsgräns. Testverktyget använder faktisk filversion, räknar assertions och bevarar fel. Varken agenten eller gatewayen kan ändra GitHub, skicka e-post, köpa tjänster eller styra din dator.
 
-## Begränsningar
+Upp till 24 beslut per körning; Fortsätt behåller uppdraget i samma flik. ZIP innehåller uppdrag, kontrakt, aktuella filer, källunderlag, fel, modeller, anropsstatistik och granskningar. Omladdning tömmer minnesarbetsytan. Genererad kod visas som text och ska granskas före användning.
 
-Samma modell kan göra misstag i alla roller. GPT-OSS-20B blir inte en större modell genom dessa ändringar. Tjänstens faktiskt tillåtna modeller, tokenbudget, resonemangsinställningar och kvoter är utanför appens kontroll. Auto begär medium och anpassar efter avklippning; tidigare live-test visade 1500 genererade token trots större begärd budget. Inget kringgående av tjänstens gränser används.
+## Gratisgräns och integritet
 
-Agenten har inte Unity, Unreal, npm-installation, en full webbläsartestare, e-post, konton eller operativsystemåtkomst. HTML och kod visas som inert text i appen och körs inte vid filvisning. Kodtester kräver en separat kryssruta. Genererade filer ska granskas före användning. Full spelbarhet, säkerhet och prestanda kan inte bevisas av statiska filkontroller eller en AI-granskare.
+Servern tillåter bara katalogbekräftade gratisvarianter med nollpris. Ingen AI-leverantörsnyckel, betald fallback eller automatisk uppgradering används. Kvoter: 90 anrop/timme per klient, 150/timme för hela projektet, 1 000/dag och 10 000/månad; högst 3 samtidiga AI-anrop. Kvoterna är delade, atomiska och får inte kringgås. Gratisåtkomst kan begränsas eller upphöra. Använd inga hemligheter eller personuppgifter: uppdrag och verktygsunderlag går via Supabase till Kilo och vald modellleverantör. Backenddatabasen lagrar kvoträknare och tillfälliga HMAC-baserade klientidentifierare, inte prompts eller råa IP-adresser.
 
-Gratisåtkomst är kvotbegränsad och kan upphöra. Ingen betalreserv används. AI och webbverktyg får uppdrag och relevanta utdrag; använd inte hemligheter. Kilo är fortsatt ett manuellt valt alternativ, inte en verifierad starkare standardmodell. Den befintliga klassiska chatten finns kvar.
+## Verifiering — läs utfallen, inte testfilens namn
 
-## Verifiering
+Regressionssviten testar programlogik och använder simulerad AI där det behövs. Liveproven använder riktiga anonyma modell- och backendanrop, utan simulerad inferens. Förhandsprovet levererar kandidatens statiska appfiler i en webbläsare på GitHub Pages-origin; publiceringsprovet använder den publicerade sidan utan filersättning.
 
-```sh
-node --test tests/agent-unit.mjs tests/reasoning-v51.mjs tests/cap-v51.mjs tests/progress-v511.mjs tests/quality-v52.mjs tests/snapshot-v52.mjs tests/protocol-recovery-v52.mjs
-```
+`tests/agent-optimization-v6.mjs`: agenten skriver en generell optimerare. Testaren kör 28 separata kontroller som inte är modellens egna assertions, inklusive 20 ytterligare indatafall. Kontrollen omfattar nu även det kvotgiriga jämförelseresultatet och slutsvarets numeriska jämförelse.
 
-De deterministiska testerna använder simulerade modeller. De kontrollerar bl.a. avvisning av plan i byggläge, underkänd tom granskning, versionskonflikter, saknade beroenden, obehörig kodkörning och bevarade funktioner från 5.1.1. Lokala webbläsartester använder simulerad AI men kör JS-sandboxen på riktigt.
+`tests/backend-hardened-live-v6.mjs`: agenten bygger en minimal FPS-prototyp. Separat browser verifierar rörelse, rotation, skott/poäng, återställning och icke-tom canvas. Modellgenererad kod körs aldrig med GitHub-token eller som ett Node-program på runnern; externa nätverksanrop blockeras i testbrowsern.
 
-Det separata `build-v52.yml` kör en riktig anonym bygguppgift. En separat webbläsare öppnar den genererade FPS-prototypen och testar rörelse, rotation, skott/poäng, återställning och icke-tom canvas. Testresultatet ska läsas från körningens faktiska logg/artefakt; förekomsten av testfilen betyder INTE att testet har passerat. Ingen modellgenererad kod körs i Node eller med repo-/kontoautentisering; spelprovet serveras separat med externa webbförfrågningar blockerade.
+Aktuella utfall finns i GitHub Actions-artefakterna och `AI_TEST_RESULTS.json`. Ett grönt regressionstest är inte ett godkänt liveprov. Ett godkänt optimerings- eller spelprov bevisar den testade uppgiften, inte obegränsad kapacitet eller generell felfri intelligens.
 
-## Status vid leverans 2026-10-23
+## Observerade rättningar före merge
 
-117 deterministiska tester passerar (simulerad AI där modellen behövs). Nio lokala webbläsarkontroller passerar, med simulerad AI men riktig isolerad JS-körning. Detta bevisar inte generell resonemangsförmåga.
+Det första skärpta provet räknade korrekt men använde {optimal, baseline} i JSON medan testaren antog en platt rot. Testaren accepterar nu båda entydiga representationerna men kräver samma numeriska resultat och samma 28 separata kodkontroller. Spelprovet missade träffbarhet från start och fastnade i dubbelt JSON-kodade filnamnslistor. Endast en strikt JSON-array av filnamn kan nu normaliseras; detta loggas och ändrar inte behörighet, filnamnskontroll eller sandbox. Krav på startläge och kombinerade kantfall ska bevaras i kriterier och faktiska tester. Ett nytt liveprov krävs efter dessa ändringar.
 
-Tre verkliga FPS-byggprov genomfördes med gpt-oss-20b utan konto eller API-nyckel. Inget komplett FPS-bygge blev godkänt: första körningen stoppades av HTTP 503, andra fastnade i analysformat och stoppades senare av ett felaktigt native-anrop efter två kodfiler. De kodfelen rättades. Tredje försöket klarade uppdragsanalysen direkt men nästa anrop fick HTTP 500. Den slutliga lilla ändringen ger även HTTP 500 samma begränsade återhämtning som övriga tillfälliga serverfel; den har regressionstestats men inte ett nytt fullständigt live-FPS-prov. Se AI_TEST_RESULTS.json för exakta körningar.
+## Diagnostik och styrning
 
-Uppdragsanalys som inte kan valideras får högst tre försök i samma körning, inte en obegränsad rättningsloop. Ogiltiga native-anrop körs aldrig; nästa beslut kan använda samma validerade JSON-format utan native-funktioner. Detta återanvänder samma provider, inte en ny tjänst.
-
-Kilo kontrollerades från GitHub Pages-domänen och blockerades av CORS. Ingen starkare gratis molnmodell har därför verifierats eller blivit standard. Versionen levererar nya redigerings-, krav- och testfunktioner, **inte ett löfte om pålitlig autonom spelutveckling**.
+Avklippning sänker nu bara den berörda rollens/modellets nästa automatiska resonemangsinställning, inte alla andra roller. Felsökning och kritik behåller sin reflektionsbudget. Saknade identifierare i kodtester får radangivna källledtrådar. Flera klassiska scriptfiler kan syntaxkompileras tillsammans i den befintliga godkända sandboxen för att hitta deklarationskollisioner, utan att anropa programmet. Detta är inte ett DOM-test. Assertionverktyget har även equal, deepEqual och throws för begränsade JSON-liknande testdata. När filer och grundkontroller finns skickar styrningen uppdraget till ett konkret kandidatsvar och därefter separat kritik, inte en oändlig serie identiska tester. Kritiken kan fortfarande underkänna och begära mer arbete.

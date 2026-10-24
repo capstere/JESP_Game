@@ -1,0 +1,30 @@
+name: Backend v6 alternative role assignment
+on:
+  push:
+    branches: [feat/backend-v6]
+    paths: [.github/workflows/backend-cross-v6.yml]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 17
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Backend and retained regression tests (mocked where stated)
+        run: node --test tests/agent-unit.mjs tests/reasoning-v51.mjs tests/cap-v51.mjs tests/progress-v511.mjs tests/quality-v52.mjs tests/snapshot-v52.mjs tests/protocol-recovery-v52.mjs tests/backend-v6.mjs
+      - name: Install pinned browser
+        run: |
+          npm install --no-save --package-lock=false playwright@1.56.1
+          npx playwright install chromium
+      - name: Real build, reversed worker/reviewer roles, unchanged gameplay criteria
+        run: node tests/backend-cross-v6.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: backend-v6-cross-build
+          path: backend-cross-evidence/

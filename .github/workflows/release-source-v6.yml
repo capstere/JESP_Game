@@ -1,0 +1,34 @@
+name: V6 release source and regression audit
+on:
+  push:
+    branches: [feat/backend-v6]
+    paths: [.github/workflows/release-source-v6.yml]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Source snapshot (no credentials)
+        run: |
+          mkdir -p release-source
+          git archive --format=tar HEAD > release-source/source.tar
+          git rev-parse HEAD > release-source/commit.txt
+      - name: Regression checks
+        run: |
+          set -o pipefail
+          node --test tests/agent-unit.mjs tests/reasoning-v51.mjs tests/cap-v51.mjs tests/progress-v511.mjs tests/quality-v52.mjs tests/snapshot-v52.mjs tests/protocol-recovery-v52.mjs tests/backend-v6.mjs tests/backend-hardening-v6.mjs tests/backend-escalation-v6.mjs tests/backend-budget-v6.mjs tests/backend-argument-guard-v6.mjs | tee release-source/regression.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: v6-release-source
+          path: release-source/
+          retention-days: 7

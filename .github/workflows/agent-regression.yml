@@ -19,4 +19,4 @@ jobs:
         with:
           node-version: '22'
       - name: Deterministic checks only; no external AI calls
-        run: node --test tests/agent-unit.mjs tests/reasoning-v51.mjs tests/cap-v51.mjs tests/progress-v511.mjs tests/quality-v52.mjs tests/snapshot-v52.mjs tests/protocol-recovery-v52.mjs
+        run: node --test tests/agent-unit.mjs tests/reasoning-v51.mjs tests/cap-v51.mjs tests/progress-v511.mjs tests/quality-v52.mjs tests/snapshot-v52.mjs tests/protocol-recovery-v52.mjs tests/backend-v6.mjs tests/backend-hardening-v6.mjs tests/backend-escalation-v6.mjs tests/backend-budget-v6.mjs tests/backend-argument-guard-v6.mjs tests/final-review-v601.mjs tests/arguments-v601.mjs tests/controller-v601.mjs

@@ -1,0 +1,35 @@
+name: Anonymous coding model capability checks
+on:
+  push:
+    branches: [feat/backend-v6]
+    paths: [.github/workflows/coding-models-v6.yml]
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - run: |
+          mkdir -p coding-evidence
+          cat > /tmp/probe.mjs <<'JS'
+          import {writeFile} from 'node:fs/promises';
+          const base='https://dzjjffgohxeoahtflqjo.supabase.co/functions/v1/jesp-gateway';
+          const out=[];
+          for(const model of ['cohere/north-mini-code:free','poolside/laguna-s-2.1:free','nvidia/nemotron-3.5-lightning:free']){
+           const start=Date.now();
+           try{
+            const r=await fetch(base+'/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model,reasoning:'medium',max_tokens:4096,messages:[{role:'user',content:'Use write_file to create dedupe.js containing function dedupeById(items). Keep the first object for each id, preserve order, never mutate input. Distinguish numeric 0 from string "0" and accept the empty string as an id. Throw TypeError if items is not an array or any entry is null, not an object, lacks its own id property, or id is neither a finite number nor a string. Ordinary JavaScript, no imports, no exports. Complete implementation, no placeholders. Return one write_file function call only, not a plan.'}],tools:[{type:'function',function:{name:'write_file',description:'Create a file',parameters:{type:'object',properties:{name:{type:'string'},content:{type:'string'}},required:['name','content'],additionalProperties:false}}}]}),signal:AbortSignal.timeout(125000)});
+            const data=await r.json(),calls=data.choices?.[0]?.message?.tool_calls||[];const call=calls[0];const args=call?JSON.parse(call.function.arguments):null;
+            let syntax=false;if(args?.content){new Function(args.content);syntax=true;}
+            out.push({requested:model,status:r.status,actual:data.model,usage:data.usage,finish:data.choices?.[0]?.finish_reason,validToolCall:call?.function.name==='write_file'&&args?.name==='dedupe.js'&&syntax,code:args?.content,error:data.error,ms:Date.now()-start});
+           }catch(e){out.push({requested:model,error:e.message,ms:Date.now()-start});}
+          }
+          await writeFile('coding-evidence/result.json',JSON.stringify({mockedAI:false,authenticated:false,note:'Tool-call shape and syntax only; generated code was not executed in this probe',results:out},null,2));console.log(JSON.stringify(out));
+          JS
+          node /tmp/probe.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coding-candidates-v6
+          path: coding-evidence/

@@ -1,0 +1,87 @@
+name: V6.0.1 real release acceptance
+on:
+  push:
+    branches: [feat/backend-v6]
+    paths: [.github/workflows/release-v601.yml, tools/prepare_release_v601.py, tools/repair_release_v601.py, tools/improve_control_v601.py, agents/final-review.mjs, tests/final-review-v601.mjs]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: jesp-release-v601
+  cancel-in-progress: false
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    permissions:
+      contents: write
+    outputs:
+      sha: ${{ steps.commit.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/backend-v6
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: |
+          if ! grep -q "VERSION='6.0.1'" agents/core.mjs; then python3 tools/prepare_release_v601.py; fi
+          if ! grep -q 'argumentNormalization' agents/runner.mjs; then python3 tools/repair_release_v601.py; fi
+          if ! grep -q 'synthesisReady' agents/runner.mjs; then python3 tools/improve_control_v601.py; fi
+          node --test tests/agent-unit.mjs tests/reasoning-v51.mjs tests/cap-v51.mjs tests/progress-v511.mjs tests/quality-v52.mjs tests/snapshot-v52.mjs tests/protocol-recovery-v52.mjs tests/backend-v6.mjs tests/backend-hardening-v6.mjs tests/backend-escalation-v6.mjs tests/backend-budget-v6.mjs tests/backend-argument-guard-v6.mjs tests/final-review-v601.mjs tests/arguments-v601.mjs tests/controller-v601.mjs
+      - id: commit
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add agents tests/agent-optimization-v6.mjs tests/final-review-v601.mjs tests/backend-argument-guard-v6.mjs tests/backend-escalation-v6.mjs README_AI.md AI_TEST_RESULTS.json
+          if ! git diff --cached --quiet; then git commit -m 'Apply observed control-flow and role-budget repairs [skip ci]'; git push origin HEAD:feat/backend-v6; fi
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+  live:
+    needs: prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 17
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        case: [optimization, fps]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: |
+          mkdir -p release-evidence
+          git rev-parse HEAD > release-evidence/candidate-commit.txt
+          git archive --format=tar HEAD agents backend tests tools index.html chat.html ai.js README_AI.md AI_TEST_RESULTS.json .github > release-evidence/source.tar
+          npm install --no-save --package-lock=false playwright@1.56.1
+          npx playwright install chromium
+      - name: Real agent acceptance with independent expected outcomes
+        id: acceptance
+        env:
+          CASE: ${{ matrix.case }}
+        run: |
+          if [ "$CASE" = optimization ]; then node tests/agent-optimization-v6.mjs; else node tests/backend-hardened-live-v6.mjs; fi
+      - name: Record actual outcome
+        if: always()
+        env:
+          CASE: ${{ matrix.case }}
+          RESULT: ${{ steps.acceptance.outcome }}
+        run: |
+          python3 - <<'PY'
+          import json,os,subprocess
+          from pathlib import Path
+          Path('release-evidence/outcomes.json').write_text(json.dumps({'candidate':subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),'mockedAI':False,'case':os.environ['CASE'],'result':os.environ['RESULT']},indent=2))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: v601-real-${{ matrix.case }}
+          path: |
+            release-evidence/
+            optimization-agent-evidence/
+            backend-hardened-evidence/
+          retention-days: 14

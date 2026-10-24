@@ -1,3 +1,4 @@
+import {backendAsk,DEFAULT_WORKER,DEFAULT_CRITIC} from './backend.mjs?v=6.0.1';
 import {AI as ProviderAI,pause,check} from './runtime.mjs?v=5.1.1';
 export function transientDelay(error,attempt) {
  if(![500,502,503,504].includes(error?.status)||attempt>=2)return null;
@@ -7,9 +8,11 @@ export function transientDelay(error,attempt) {
 }
 // Retry only transient server errors. No new provider/account, no quota bypass.
 export class AI extends ProviderAI {
+ constructor(options={}){super(options);this.workerModel=options.workerModel||DEFAULT_WORKER;this.criticModel=options.criticModel||DEFAULT_CRITIC;}
  async requestOnce(...args){return super.ask(...args);}
  async wait(ms,signal){return pause(ms,signal);}
  async ask(messages,signal,maxTokens,tools) {
+  if(this.provider==='backend')return backendAsk(this,messages,signal,maxTokens,tools);
   if(this.jsonProtocol&&tools?.length){
    messages=[...messages,{role:'user',content:'Native function calls are disabled for this recovery. Return ONLY JSON, no code fences: {"kind":"actions","actions":[{"tool":"TOOL_NAME","args":{...}}]} or {"kind":"final","answer":"..."}. For the initial strategy use a single submit_strategy action. Tool names and argument schemas: '+JSON.stringify(tools.map(t=>({name:t.function.name,parameters:t.function.parameters})))}];
    tools=undefined;
