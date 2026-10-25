@@ -83,3 +83,23 @@ export function projectPropertyTest(space){
   ].join('\n');
   return Object.freeze({id:'V8',kind:'js',files:Object.freeze([file.name]),requirement:'Oberoende 0/1-facit: 23 fall inklusive kostnadsfritt projekt med nollbudget, slumpade optimala urval och ogiltig budget',code});
 }
+
+// Trusted UI contract for the explicitly requested FPS task, derived from its inputs.
+// Unlike an AI-written test, it never changes its expected initial position to (0,0).
+export function fpsPropertyTest(space) {
+  const q=String(space.question||'');
+  if(!/(?:\bfps\b|förstaperson|first[- ]person)/i.test(q)||!/window\.gameState/.test(q)||!/window\.resetGame/.test(q)||!/W\s*\/\s*S/i.test(q))return null;
+  if(!space.files.has('index.html'))return null;
+  const code=[
+    "const canvas=document.querySelector('canvas');assert(canvas&&canvas.width>10&&canvas.height>10,'Actual FPS canvas required');",
+    "const start={...window.gameState};assert(['x','y','angle','score'].every(k=>Number.isFinite(start[k])),'Numerical initial gameState required');",
+    "await key('w',300);assert(Math.hypot(window.gameState.x-start.x,window.gameState.y-start.y)>0.01,'W must move player from ACTUAL start');",
+    "await key('d',300);assert(Math.abs(window.gameState.angle-start.angle)>0.01,'D must rotate player');",
+    "window.resetGame();await wait(80);assert(Math.hypot(window.gameState.x-start.x,window.gameState.y-start.y)<0.001&&Math.abs(window.gameState.angle-start.angle)<0.001,'Reset must return to ORIGINAL start position and direction');",
+    "await key('Space',120);assert(window.gameState.score>start.score,'Shooting the visible initial target must increase score');",
+    "await key('r',80);assert(window.gameState.score===start.score,'R must reset score');",
+    "const ctx=canvas.getContext('2d');assert(ctx,'Canvas 2D context required');",
+    "const pixels=ctx.getImageData(0,0,canvas.width,canvas.height).data,colors=new Set();for(let i=0;i<pixels.length;i+=48)colors.add(pixels[i]+','+pixels[i+1]+','+pixels[i+2]);assert(colors.size>=3,'Canvas must show at least three colors');"
+  ].join('\n');
+  return Object.freeze({id:'V9',kind:'page',page:'index.html',files:Object.freeze([]),requirement:'Trusted FPS browser contract: actual-start W movement, D rotation, reset, initial shootable target, R score reset and visible canvas',code});
+}
