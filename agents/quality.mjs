@@ -1,4 +1,5 @@
 import {FINAL_REVIEW_PROMPT,CALCULATION_PROMPT} from './final-review.mjs?v=6.1.0';
+import {enforceUserContract} from './requirements.mjs?v=6.2.0';
 export * from './goal-contract.mjs?v=5.2.0';
 import {qualityIssues as baseQuality,reviewCheckIssues as baseReview,taskKind as baseTaskKind,advancedPrompt as basePrompt,normalizeStrategy as baseStrategy,strategyDefinitions as baseStrategyDefinitions} from './goal-contract.mjs?v=5.2.0';
 export function taskKind(question,mode='auto') {
@@ -67,7 +68,10 @@ export function normalizeStrategy(value,space,validateName) {
  const normalized={...value};
  if(typeof value.approach_a==='string'&&typeof value.approach_b==='string')normalized.alternatives=[value.approach_a,value.approach_b];
  for(const key of ['alternatives','criteria','steps','assumptions'])if(Array.isArray(normalized[key]))normalized[key]=normalized[key].map(itemText);
- return baseStrategy(normalized,space,validateName);
+ const contract=baseStrategy(normalized,space,validateName);
+ const protectedContract=enforceUserContract(contract,space.question);
+ space.contractCorrections=(space.contractCorrections||[]).concat(protectedContract.notices);
+ return protectedContract.contract;
 }
 
 // Unambiguous named-file tests: model cannot confuse a test label with a file name.
