@@ -42,7 +42,7 @@ jobs:
     timeout-minutes: 18
     strategy:
       fail-fast: false
-      max-parallel: 1
+      max-parallel: 2
       matrix:
         case: [optimization, fps]
     steps:
@@ -61,6 +61,8 @@ jobs:
           npx playwright install chromium
       - name: Verify real browser test harness independently of AI
         run: node tests/browser-verification-v610.mjs
+      - name: Verify audited FPS starter in a real browser, separately from model acceptance
+        run: node tests/fps-scaffold-browser-v611.mjs
       - name: Unchanged independent live acceptance
         env:
           CASE: ${{ matrix.case }}
