@@ -34,5 +34,5 @@ export function enforceUserContract(contract,question='') {
  return {contract:result,notices};
 }
 export function unsupportedReviewerIssue(issue,question='') {
- return userRequiresTarget(question)&&shooting.test(issue)&&wall.test(issue)&&!/(?:wall (?:blocks|occludes)|vägg(?:en)? blockerar)/i.test(issue)&&(/(?:collision with a wall|kollision med vägg|väggkollision|instead of (?:target|mål)|inte mot (?:isWall|vägg)|kravet säger)/i.test(issue)||!/(?:mål|target)/i.test(issue));
+ return userRequiresTarget(question)&&shooting.test(issue)&&wall.test(issue)&&!/(?:mål|target|inte|not|wrong|incorrect|felakt|erroneous|bug|problem|misstag|bör inte|should not)/i.test(issue);
 }

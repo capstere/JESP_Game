@@ -83,3 +83,9 @@ test('filename cleanup rejects unsafe paths or ambiguous user deliverables',()=>
  const space={question:'Skapa solver.js',taskKind:'build',expectedNames:new Set(['solver.js'])};
  assert.throws(()=>normalizeStrategy(input,space,name=>{if(name.includes('/'))throw Error('unsafe path');}),/unsafe path/);
 });
+
+test('critic must retain reports of real wall-scoring bug, not suppress them as invented requirements',()=>{
+ assert.equal(unsupportedReviewerIssue('The game incorrectly scores when shooting a wall instead of the visible target',request),false);
+ assert.equal(unsupportedReviewerIssue('Shooting walls should not increase score',request),false);
+ assert.equal(unsupportedReviewerIssue('C3: shoot a wall to score',request),true);
+});
