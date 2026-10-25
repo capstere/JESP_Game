@@ -2,6 +2,7 @@
 <html lang="sv">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="dark"><meta name="referrer" content="no-referrer">
+<meta http-equiv="Content-Security-Policy" content="frame-src 'self' blob: data:; object-src 'none'; base-uri 'self'">
 <meta name="description" content="JESP AI: gratis agentläge utan konto. Sök, läs, räkna, skapa filer och granska med synliga verktygsresultat.">
 <title>JESP AI · Gratis agenter</title>
 <link rel="stylesheet" href="./agents/style.css?v=5.2.0">
@@ -9,7 +10,7 @@
 <body>
 <main>
 <header><div class="top"><a class="brand" href="./">JESP<span> / AI</span></a><nav><a href="./chat.html">Klassisk chatt</a><a href="https://github.com/capstere/JESP_Game" target="_blank" rel="noopener noreferrer">Källkod</a></nav></div>
-<p class="eyebrow">Version 6.0.1 · Välj lösning → bygg → pröva</p>
+<p class="eyebrow">Version 6.1.0 · Välj lösning → bygg → pröva</p>
 <h1>Ge AI:n ett uppdrag.<br><span>Inte bara en fråga.</span></h1>
 <p class="lead">Planera. Sök. Skapa. Granska. Utan konto, API-nyckel eller betalreserv.</p>
 <div class="badges"><span>Inget konto</span><span>Faktiska verktyg</span><span>Du styr körningen</span></div>
@@ -29,7 +30,7 @@
 </div>
 <div id="backendSettings"><div class="settings-grid"><div><label for="workerModel">Arbetsmodell</label><select id="workerModel"></select></div><div><label for="criticModel">Separat granskningsmodell</label><select id="criticModel"></select></div></div><p id="backendInfo" class="small">Kontrollerar gratisåtkomst…</p><button id="refreshBackend" type="button">Uppdatera gratis modeller</button></div>
 <div id="kiloSettings" hidden><label for="model">Verifierat gratis modell-ID i katalogen</label><select id="model"></select></div>
-<div class="checks"><label><input id="advanced" type="checkbox" checked> Fördjupad problemlösning: jämför alternativ, välj lösning och kontrollera varje krav</label><label><input id="web" type="checkbox" checked> Tillåt webbsökning och läsning av publika källor</label><label><input id="review" type="checkbox" checked> Separat kritiker och rättningsrundor inom beslutsbudgeten</label><label><input id="code" type="checkbox"> Tillåt isolerade JavaScript-tester utan nätverk (högst 4 sekunder/test)</label></div>
+<div class="checks"><label><input id="advanced" type="checkbox" checked> Fördjupad problemlösning: jämför alternativ, välj lösning och kontrollera varje krav</label><label><input id="web" type="checkbox" checked> Tillåt webbsökning och läsning av publika källor</label><label><input id="review" type="checkbox" checked> Separat kritiker och rättningsrundor inom beslutsbudgeten</label><label><input id="code" type="checkbox"> Tillåt kodtester: isolerad JS (4 s) och browserram (10 s). Ingen extern nätverkstrafik. Låst sidkod kan kräva att fliken stängs.</label></div>
 <div id="localNote" hidden class="notice"><label><input id="downloadConsent" type="checkbox"> Jag godkänner nedladdning av en lokal modell, ungefär 1–2 GB.</label><p>WebGPU och flera GB ledigt minne behövs. Lokal agentförmåga är mer begränsad. Stäng av webbverktyg för att hålla även sökfrågor på enheten. Den mindre CPU-modellen finns kvar i klassisk chatt.</p></div>
 <div class="toolbar"><button id="test" type="button">Testa AI-anslutningen</button><button id="checkKilo" type="button">Kontrollera Kilo gratis</button></div>
 <p id="providerNote" class="small">Backend använder Kilos dokumenterade anonyma gratisåtkomst via din Supabase-server, utan nyckel i webbläsaren. Arbete och kritik kan använda olika modeller. Pollinations finns kvar som ett manuellt valt äldre alternativ.</p>
@@ -51,7 +52,7 @@
 </section>
 <footer><p><strong>Gratis åtkomst, inte obegränsad molnkapacitet.</strong> Inga betaluppgifter används. Vid nekad åtkomst visas felet; appen öppnar ingen inloggning och köper inget. Arbete och kritik kan använda olika modeller. Modellgranskning är inte en garanti; kontrollera tester och leveranser.</p><p>Arbetsytan finns i minnet tills du lämnar sidan. Körspår och delresultat kan sparas i ZIP. Endast en anonym väntetidsstämpel sparas lokalt för att respektera kvoten. Agenten kan inte skicka e-post, logga in på webbplatser, ändra GitHub eller styra din dator.</p><p><a href="https://parallel.ai/privacy-policy" target="_blank" rel="noopener noreferrer">Parallel</a> · <a href="https://exa.ai/privacy" target="_blank" rel="noopener noreferrer">Exa</a> · <a href="https://pollinations.ai" target="_blank" rel="noopener noreferrer">Pollinations</a> · <a href="./README_AI.md">Teknik och begränsningar</a></p></footer>
 </main>
-<script type="module" src="./agents/app.mjs?v=6.0.1"></script>
+<script type="module" src="./agents/app.mjs?v=6.1.0"></script>
 <script>setTimeout(()=>{if(!window.JESP_AGENT_BOOTED){document.getElementById('status').textContent='Agentmotorn kunde inte laddas. Ladda om sidan, eller öppna Klassisk chatt.';}},15000);</script>
 </body>
 </html>

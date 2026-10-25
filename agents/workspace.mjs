@@ -1,11 +1,16 @@
-import {ASSERT_HARNESS} from './test-harness.mjs?v=6.0.1';
-import {failureDiagnostics,crossScriptSyntax} from './diagnostics.mjs?v=6.0.1';
+import {executePageTest} from './page-test.mjs?v=6.1.0';
+import {ASSERT_HARNESS} from './test-harness.mjs?v=6.1.0';
+import {failureDiagnostics,crossScriptSyntax} from './diagnostics.mjs?v=6.1.0';
 import {Workspace as BaseWorkspace,filename,check} from './runtime.mjs?v=5.1.1';
-import {projectCheck} from './quality.mjs?v=6.0.1';
+import {projectCheck} from './quality.mjs?v=6.1.0';
 export class Workspace extends BaseWorkspace {
   async tool(name,args={}) {
     check(this.signal);
     if(!args||typeof args!=='object'||Array.isArray(args))throw new Error('Verktygsargument måste vara ett objekt.');
+    if(name==='test_page'){
+      if(!this.allowCode)throw Error('Sidtester kräver användarens godkännande för kodkörning.');
+      return executePageTest(this.files,args,this.signal);
+    }
     if(name==='list_files')return {files:[...this.files.values()].map(({name,version,bytes,content})=>({name,version,bytes,lines:content.split('\n').length}))};
     if(name==='check_project'){
       const base=projectCheck(this);

@@ -1,9 +1,10 @@
-import {synthesisReady,SYNTHESIS_INSTRUCTION} from './controller.mjs?v=6.0.1';
-import {normalizeToolArguments} from './arguments.mjs?v=6.0.1';
-import {finalAnswerIssues} from './final-review.mjs?v=6.0.1';
-import {backendToolDefinitions,taskKind,normalizeStrategy,strategyDefinitions,advancedPrompt,editingDefinitions,qualityIssues,reviewCheckIssues} from './quality.mjs?v=6.0.1';
+import {artifactKey,verificationRequired,verificationIssues,verifierPrompt,normalizeSuite,executeSuite} from './verification.mjs?v=6.1.0';
+import {synthesisReady,SYNTHESIS_INSTRUCTION} from './controller.mjs?v=6.1.0';
+import {normalizeToolArguments} from './arguments.mjs?v=6.1.0';
+import {finalAnswerIssues} from './final-review.mjs?v=6.1.0';
+import {backendToolDefinitions,taskKind,normalizeStrategy,strategyDefinitions,advancedPrompt,editingDefinitions,qualityIssues,reviewCheckIssues} from './quality.mjs?v=6.1.0';
 import {toolDefinitions,reviewDefinitions} from './protocol.mjs?v=5.1.1';
-import {snapshot,completionIssues,requestedFiles} from './evidence.mjs?v=6.0.1';
+import {snapshot,completionIssues,requestedFiles} from './evidence.mjs?v=6.1.0';
 
 // Keep operational evidence, never hidden model reasoning, in the downloadable trace.
 function record(space,emit,type,data={}) {
@@ -93,10 +94,10 @@ async function readBack(space,emit,check,signal) {
   }
   return issues;
 }
-export async function runAgentImpl({question,ai,space,signal,maxSteps=12,review=true,advanced=false,mode='auto',emit=()=>{}},{parseJSON,check}) {
+export async function runAgentImpl({question,ai,space,signal,maxSteps=12,review=true,advanced=false,mode='auto',verifyBehavior=false,emit=()=>{}},{parseJSON,check}) {
   if(!question?.trim()||question.length>12000)throw new Error('Uppdraget måste vara 1–12 000 tecken.');
   maxSteps=Math.max(2,Math.min(24,Math.floor(Number(maxSteps)||12)));
-  space.backend=ai.provider==='backend';space.advanced=advanced;space.taskKind=taskKind(question,mode);
+  space.verifyBehavior=verifyBehavior;space.backend=ai.provider==='backend';space.advanced=advanced;space.taskKind=taskKind(question,mode);
   space.question=question;for(const n of requestedFiles(question))space.expectedNames.add(n);space.trace??=[];space.reviews??=[];space.pendingIssues??=[];space.totalCalls??=0;space.lastError=null;
   let draft=space.draft||'',finished=false,reviewed=false,reviewPassed=false,formatErrors=0,strategyErrors=0,tail=[],stopReason='budget';
   record(space,emit,'run_start',{maxSteps,review,reasoning:ai.reasoning||'provider-default',provider:ai.provider||'test',continuation:space.trace.length>0});
@@ -110,13 +111,32 @@ export async function runAgentImpl({question,ai,space,signal,maxSteps=12,review=
     }catch(e){record(space,emit,'ai_error',{role,name:e.name,message:e.message,status:e.status,milliseconds:Date.now()-started});throw e;}
     finally {space.totalCalls+=Math.max(0,(ai.calls||0)-before);emit('model',{model:ai.lastModel||'',calls:space.totalCalls});}
   };
-  let reviewNext=false,preserveDraft=false;
-  const gatesFor=(answer='')=>[...completionIssues(space,answer),...qualityIssues(space)];
+  let reviewNext=false,preserveDraft=false,verificationFormats=0;
+  const gatesFor=(answer='')=>[...completionIssues(space,answer),...qualityIssues(space),...verificationIssues(space)];
   try {
     for(let step=1;step<=maxSteps;step++) {
       check(signal);
       const remaining=maxSteps-step+1;
       const planning=space.advanced&&!space.strategy;
+      // Tests are written by a distinct role and retained unchanged for subsequent repairs.
+      const canVerify=!planning&&!reviewNext&&verificationRequired(space)&&space.expectedNames.size&&remainingFiles(space).length===0;
+      if(canVerify&&space.verification?.suite&&space.verification.key!==artifactKey(space)){
+        emit('stage',{stage:'review',step,maxSteps});
+        await executeSuite(space,emit);record(space,emit,'verification_result',{passed:space.verification.passed,results:space.verification.results});
+        tail=[];continue;
+      }
+      const verifying=canVerify&&!space.verification?.suite;
+      if(verifying){
+        emit('stage',{stage:'review',step,maxSteps});
+        const answer=await ask([{role:'system',content:verifierPrompt()},{role:'user',content:'ORIGINALUPPDRAG:\n'+question+'\nOPÅLITLIGT FILUNDERLAG:\n'+JSON.stringify(snapshot(space,90000))}],undefined,'verifier');
+        try{
+          if(answer.truncated||answer.protocolError)throw Error('Testförslaget är avklippt eller har ogiltigt format.');
+          const raw=parseJSON(answer.text);space.verification={suite:normalizeSuite(raw,space),key:null,passed:false,results:[],executions:0,model:answer.model};
+          record(space,emit,'verification_suite',{model:answer.model,tests:space.verification.suite});
+          await executeSuite(space,emit);record(space,emit,'verification_result',{passed:space.verification.passed,results:space.verification.results});
+        }catch(e){check(signal);verificationFormats++;record(space,emit,'verification_error',{message:e.message});if(verificationFormats>=2){stopReason='verification';break;}space.pendingIssues.push('VERIFY: '+e.message);}
+        tail=[];continue;
+      }
       let synthesizing=!planning&&!reviewNext&&synthesisReady(space,gatesFor(''));
       if(synthesizing){
         const signature=JSON.stringify([...space.files.values()].map(f=>[f.name,f.version]));
@@ -231,6 +251,6 @@ export async function runAgentImpl({question,ai,space,signal,maxSteps=12,review=
     draft='Ofullständigt uppdrag. '+(stopReason==='format'?'AI:n gav upprepade formatfel.':stopReason==='strategy'?'Uppdragsanalysen kunde inte valideras efter tre försök.':'Beslutsbudgeten tog slut.')+'\n\nSkapade filer: '+([...space.files.keys()].join(', ')||'inga')+'.\n'+issues.map(x=>'• '+x).join('\n')+'\n\nDelresultaten finns kvar. Fortsätt körningen för att arbeta vidare.';
   }
   space.draft=draft;
-  const result={answer:draft,reviewed,reviewPassed,unfinished:!finished,stopReason,issues,calls:space.totalCalls,model:ai.lastModel,files:[...space.files.values()],sources:[...space.sources.values()],audit:space.audit,reviews:space.reviews,strategy:space.strategy||null,taskKind:space.taskKind};
+  const result={answer:draft,reviewed,reviewPassed,unfinished:!finished,stopReason,issues,calls:space.totalCalls,model:ai.lastModel,files:[...space.files.values()],sources:[...space.sources.values()],audit:space.audit,reviews:space.reviews,strategy:space.strategy||null,verification:space.verification||null,taskKind:space.taskKind};
   record(space,emit,'run_done',{unfinished:!finished,stopReason,issues});emit('done',result);return result;
 }

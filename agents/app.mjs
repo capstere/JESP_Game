@@ -1,5 +1,5 @@
-import {backendModels,DEFAULT_WORKER,DEFAULT_CRITIC} from './backend.mjs?v=6.0.1';
-import {AI,Workspace,runAgent,freeModels,VERSION,check} from './core.mjs?v=6.0.1';
+import {backendModels,DEFAULT_WORKER,DEFAULT_CRITIC} from './backend.mjs?v=6.1.0';
+import {AI,Workspace,runAgent,freeModels,VERSION,check} from './core.mjs?v=6.1.0';
 import {executeJS} from './sandbox.mjs?v=5.2.0';
 import {zipFiles} from './zip.mjs';
 import {localAnswer,unloadLocal} from './local.mjs';
@@ -79,7 +79,7 @@ async function run(test=false,resume=false){
  const ai=new AI({workerModel:settings.workerModel,criticModel:settings.criticModel,provider:$('provider').value,model:$('model').value,onStatus:transportStatus,local:localAnswer,reasoning:settings.reasoning});
  try{
   if(test){const answer=await ai.ask([{role:'user',content:input}],signal,64);check(signal);space.totalCalls=ai.calls;space.trace.push({type:'connection_test',model:answer.model,calls:ai.calls,requestedReasoning:ai.reasoning});emit('done',{answer:answer.text,reviewed:false,reviewPassed:false,unfinished:false,calls:ai.calls,model:answer.model});emit('model',{model:answer.model,calls:ai.calls});status('Ett riktigt AI-svar mottogs. Detta testar anslutningen, inte hela agenten.','success');}
-  else{result=await runAgent({question,ai,space,signal,maxSteps:Number($('steps').value),review:$('review').checked,advanced:settings.advanced,mode:settings.mode,emit});status(result.unfinished?'Uppdraget är ofullständigt. Se kvarvarande problem eller tryck Fortsätt.':'Leveranskontrollen är klar. Kontrollera resultat och filer.',result.unfinished?'warning':'success');}
+  else{result=await runAgent({question,ai,space,signal,maxSteps:Number($('steps').value),review:$('review').checked,advanced:settings.advanced,mode:settings.mode,verifyBehavior:true,emit});status(result.unfinished?'Uppdraget är ofullständigt. Se kvarvarande problem eller tryck Fortsätt.':'Leveranskontrollen är klar. Kontrollera resultat och filer.',result.unfinished?'warning':'success');}
  }catch(e){space.lastError={name:e.name,message:e.message,status:e.status||null,time:new Date().toISOString()};space.trace.push({type:'ui_error',...space.lastError});status(explain(e),e.name==='AbortError'?'':'error');log('Körningen stoppades',String(e.message||e),'error');$('answerNote').textContent='Ofullständig körning. Resultat och filer som redan skapats har behållits.';}
  finally{busy=false;controller=null;for(const el of document.querySelectorAll('[data-stage]'))el.classList.remove('active');controls();}
 }
@@ -96,7 +96,7 @@ $('checkKilo').onclick=async()=>{
 $('copy').onclick=async()=>{try{await navigator.clipboard.writeText($('answer').textContent);status('Svaret kopierat.','success');}catch{status('Urklipp blockerades. Markera texten och kopiera manuellt.','error');}};
 $('save').onclick=()=>{
  if(!space)return;
- const meta={version:VERSION,strategy:space.strategy||null,taskKind:space.taskKind||null,question,answer:$('answer').textContent,settings,reviewed:result?.reviewed||false,reviewPassed:result?.reviewPassed||false,unfinished:busy||!result||result.unfinished,stopReason:busy?'running':space.lastError?'error':result?.stopReason||'unknown',error:space.lastError,calls:space.totalCalls,model:result?.model||space.lastModel||null,issues:result?.issues||space.pendingIssues||[],sources:[...space.sources.values()],audit:space.audit,reviews:space.reviews,trace:space.trace,files:[...space.files.values()].map(({name,bytes,version})=>({name,bytes,version}))};
+ const meta={version:VERSION,verification:space.verification||null,strategy:space.strategy||null,taskKind:space.taskKind||null,question,answer:$('answer').textContent,settings,reviewed:result?.reviewed||false,reviewPassed:result?.reviewPassed||false,unfinished:busy||!result||result.unfinished,stopReason:busy?'running':space.lastError?'error':result?.stopReason||'unknown',error:space.lastError,calls:space.totalCalls,model:result?.model||space.lastModel||null,issues:result?.issues||space.pendingIssues||[],sources:[...space.sources.values()],audit:space.audit,reviews:space.reviews,trace:space.trace,files:[...space.files.values()].map(({name,bytes,version})=>({name,bytes,version}))};
  const all=[...space.files.values()].map(f=>({name:'filer/'+f.name,content:f.content}));
  if(space.strategy)all.push({name:'uppdragskontrakt.json',content:JSON.stringify(space.strategy,null,2)});
  all.push({name:'korspar.json',content:JSON.stringify(space.trace,null,2)},{name:'kallunderlag.json',content:JSON.stringify(Object.fromEntries(space.evidence),null,2)},{name:'uppdrag.json',content:JSON.stringify(meta,null,2)},{name:'resultat.md',content:'# JESP AI\n\n'+question+'\n\n'+$('answer').textContent+'\n\n## Källor\n'+[...space.sources.values()].map(s=>`[${s.id}] ${s.url}`).join('\n')});

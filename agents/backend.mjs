@@ -1,7 +1,7 @@
 import {extractAnswer,check,pause,retrySeconds} from './runtime.mjs?v=5.1.1';
 export const GATEWAY='https://dzjjffgohxeoahtflqjo.supabase.co/functions/v1/jesp-gateway';
 export const DEFAULT_WORKER='nvidia/nemotron-3.5-lightning:free';
-export function roleBudget(ai){const auto=ai.reasoning==='auto'||!ai.reasoning;const reflective=['architect','critic','repair','synthesis'].includes(ai.role);return {effort:auto?(reflective?'medium':'low'):ai.reasoning,maxTokens:auto?(ai.role==='architect'?3072:reflective?8192:6144):12288};}
+export function roleBudget(ai){const auto=ai.reasoning==='auto'||!ai.reasoning;const reflective=['architect','critic','repair','synthesis','verifier'].includes(ai.role);return {effort:auto?(reflective?'medium':'low'):ai.reasoning,maxTokens:auto?(ai.role==='architect'?3072:reflective?8192:6144):12288};}
 export const DEFAULT_CRITIC='nvidia/nemotron-3-ultra-550b-a55b:free';
 async function jsonRequest(path,body,signal){
  check(signal);const controller=new AbortController();
@@ -19,7 +19,7 @@ async function jsonRequest(path,body,signal){
 }
 export async function backendModels(signal){const d=await jsonRequest('/models',null,signal);if(!Array.isArray(d.models))throw new Error('Ogiltig modellkatalog.');return d.models.filter(m=>m.supported_parameters?.includes('tools')&&!/content-safety/.test(m.id));}
 export async function backendAsk(ai,messages,signal,maxTokens=4096,tools){
- const model=['critic','repair','synthesis'].includes(ai.role)?ai.criticModel:ai.workerModel;
+ const model=['critic','repair','synthesis','verifier'].includes(ai.role)?ai.criticModel:ai.workerModel;
  if(!model)throw new Error('Välj en tillgänglig gratismodell för arbete och granskning.');
  if(JSON.stringify(messages).length>160000)throw new Error('Arbetskontexten överskrider backendens gräns. Dela upp uppdraget.');
  let {effort,maxTokens:budget}=roleBudget(ai);const effortKey=(ai.role||'work')+'|'+model;if(ai.backendEffortCaps?.has(effortKey)&&ai.reasoning==='auto')effort='low';
