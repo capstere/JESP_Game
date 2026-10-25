@@ -25,3 +25,11 @@ test('runner cannot finish after independent failure',async()=>{
 
 test('unsupported module loader is rejected before freezing a suite',()=>{const s=setup();for(const code of ["const {f}=require('./logic.js');assert(f(1));", "import {f} from './logic.js';", "export const test=1;"]){assert.throws(()=>normalizeSuite(suite(code),s),/require|import|export/);}});
 test('independent expectation prompt cannot see implementation branches or prior outcomes',()=>{const s=setup();s.write('logic.js',"function choose(input){if(input.limit===0)return 999;} globalThis.reset=function(){};");const input=verifierInput(s);const raw=JSON.stringify(input);assert.ok(raw.includes('choose(input)'));assert.ok(raw.includes('reset'));assert.ok(!raw.includes('999'));assert.ok(!raw.includes('return'));});
+
+test('compile failure is sent for repair before any verifier is called',async()=>{
+ const s=setup();s.write('index.html','<!doctype html><script src="logic.js"></script>');s.strategy={objective:'working program',criteria:[],deliverables:['logic.js','index.html'],choice:'plain JS'};s.expectedNames.add('logic.js');s.expectedNames.add('index.html');const roles=[];
+ const tool=s.tool.bind(s);s.tool=async(name,args)=>name==='check_project'?{passed:false,issues:['Duplicate lexical declaration in scripts']}:tool(name,args);
+ const ai={provider:'backend',calls:0,lastModel:'mock',async ask(){this.calls++;roles.push(this.role);return {text:JSON.stringify({kind:'final',answer:'done'}),model:'mock'};}};
+ const r=await runAgent({question:'Skapa logic.js och index.html',ai,space:s,signal:s.signal,maxSteps:2,review:false,advanced:true,mode:'build',verifyBehavior:true});
+ assert.equal(r.unfinished,true);assert.ok(!roles.includes('verifier'));assert.ok(roles.every(x=>x==='repair'));assert.equal(s.audit.filter(x=>x.tool==='check_project').length,1);
+});

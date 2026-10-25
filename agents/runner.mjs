@@ -119,7 +119,16 @@ export async function runAgentImpl({question,ai,space,signal,maxSteps=12,review=
       const remaining=maxSteps-step+1;
       const planning=space.advanced&&!space.strategy;
       // Tests are written by a distinct role and retained unchanged for subsequent repairs.
-      const canVerify=!planning&&!reviewNext&&verificationRequired(space)&&space.expectedNames.size&&remainingFiles(space).length===0;
+      let canVerify=!planning&&!reviewNext&&verificationRequired(space)&&space.expectedNames.size&&remainingFiles(space).length===0;
+      if(canVerify){
+        const signature=JSON.stringify([...space.files.values()].map(f=>[f.name,f.version]));
+        if(space.projectCheckpoint?.signature!==signature){
+          const project=await toolAction(space,{tool:'check_project',args:{}},emit,check,signal,'pre-verification');
+          space.projectCheckpoint={signature,passed:project.ok&&project.data?.passed===true,issues:project.data?.issues||[project.error||'Projektkontroll misslyckades.']};
+        }
+        space.pendingIssues=space.pendingIssues.filter(x=>!x.startsWith('PROJECT: '));
+        if(!space.projectCheckpoint.passed){space.pendingIssues.push(...space.projectCheckpoint.issues.map(x=>'PROJECT: '+x));canVerify=false;}
+      }
       if(canVerify&&space.verification?.suite&&space.verification.key!==artifactKey(space)){
         emit('stage',{stage:'review',step,maxSteps});
         await executeSuite(space,emit);record(space,emit,'verification_result',{passed:space.verification.passed,results:space.verification.results});
