@@ -70,6 +70,14 @@ export function projectCheck(space) {
       const executable=f.content.replace(/\/\*[\s\S]*?\*\//g,'').replace(/^\s*\/\/.*$/gm,'');
       if(/\b(?:window|document)\s*(?:\.|\[)/.test(executable))issues.push('DOM-fri logik i '+f.name+' får inte bero på window/document. Använd globalThis för delat tillstånd och lägg DOM-input i UI-filen.');
     }
+    if(/(?:\bfps\b|förstaperson|first[- ]person)/i.test(space.question||'')&&/^(?:logic|logik)[\w-]*\.js$/i.test(f.name)){
+      const spawn=f.content.match(/\b(?:const|let)\s+START\s*=\s*\{\s*x\s*:\s*(-?\d+(?:\.\d+)?)\s*,\s*y\s*:\s*(-?\d+(?:\.\d+)?)/);
+      const reset=f.content.match(/function\s+resetGame\s*\([^)]*\)\s*\{([\s\S]{0,500}?)\}/)?.[1]||'';
+      if(spawn&&reset){
+        if(Number(spawn[1])!==0&&/\bgameState\.x\s*=\s*0(?:\s*[;,]|\s*$)/.test(reset))issues.push('FPS resetGame måste återställa x till den faktiska startpositionen START.x, inte till 0. Annars hamnar målet fel.');
+        if(Number(spawn[2])!==0&&/\bgameState\.y\s*=\s*0(?:\s*[;,]|\s*$)/.test(reset))issues.push('FPS resetGame måste återställa y till den faktiska startpositionen START.y, inte till 0.');
+      }
+    }
     if(needsKeyboard&&/^(?:game|ui|input)[\w-]*\.js$/i.test(f.name)&&/\bevent\.key\s*===?\s*['"](?:W|A|S|D)['"]/.test(f.content)&&!/event\.key\.to(?:Lower|Upper)Case\s*\(/.test(f.content))issues.push('Tangentinput i '+f.name+' jämför bara stora tecken trots att webbläsaren kan skicka gemena w/a/s/d. Normalisera event.key eller använd KeyboardEvent.code.');
     if(/\.json$/i.test(f.name))try{JSON.parse(f.content);}catch{issues.push('Ogiltig JSON: '+f.name);}
     if(/\.(js|mjs|html)$/i.test(f.name)&&/^\s*```/.test(f.content))issues.push('Kodstaket i kodfil: '+f.name);
