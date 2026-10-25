@@ -27,13 +27,14 @@ jobs:
         run: |
           if ! grep -q "VERSION='6.1.0'" agents/core.mjs; then python3 tools/prepare_v610.py; fi
           if ! grep -q 'export function verifierInput' agents/verification.mjs; then python3 tools/correct_verification_v610.py; fi
+          if ! grep -q "'pre-verification'" agents/runner.mjs; then python3 tools/preflight_v610.py; fi
           node --test tests/agent-unit.mjs tests/reasoning-v51.mjs tests/cap-v51.mjs tests/progress-v511.mjs tests/quality-v52.mjs tests/snapshot-v52.mjs tests/protocol-recovery-v52.mjs tests/backend-v6.mjs tests/backend-hardening-v6.mjs tests/backend-escalation-v6.mjs tests/backend-budget-v6.mjs tests/backend-argument-guard-v6.mjs tests/final-review-v601.mjs tests/arguments-v601.mjs tests/controller-v601.mjs tests/verification-v610.mjs
       - id: commit
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add agents index.html tests/verification-v610.mjs
-          if ! git diff --cached --quiet; then git commit -m 'Apply independently tested verifier and browser runtime corrections [skip ci]'; git push origin HEAD:fix/verified-agent-v610; fi
+          if ! git diff --cached --quiet; then git commit -m 'Check project compilation before generating independent behavior tests [skip ci]'; git push origin HEAD:fix/verified-agent-v610; fi
           echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
   live:
     needs: prepare
@@ -58,6 +59,8 @@ jobs:
           git archive --format=tar HEAD agents backend tests tools index.html README_AI.md AI_TEST_RESULTS.json .github > release-evidence/source.tar
           npm install --no-save --package-lock=false playwright@1.56.1
           npx playwright install chromium
+      - name: Verify real browser test harness independently of AI
+        run: node tests/browser-verification-v610.mjs
       - name: Unchanged independent live acceptance
         env:
           CASE: ${{ matrix.case }}
@@ -71,4 +74,5 @@ jobs:
             release-evidence/
             optimization-agent-evidence/
             backend-hardened-evidence/
+            browser-verification-evidence/
           retention-days: 14
