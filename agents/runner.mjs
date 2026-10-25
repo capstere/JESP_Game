@@ -1,4 +1,4 @@
-import {artifactKey,verificationRequired,verificationIssues,verifierPrompt,verifierInput,verifierDefinitions,unwrapVerifierDecision,normalizeSuite,executeSuite} from './verification.mjs?v=6.1.0';
+import {artifactKey,verificationRequired,verificationIssues,verifierPrompt,verifierInput,verifierDefinitions,unwrapVerifierDecision,normalizeSuite,checkSuiteAgainstOracle,projectPropertyTest,executeSuite} from './verification.mjs?v=6.1.0';
 import {synthesisReady,SYNTHESIS_INSTRUCTION} from './controller.mjs?v=6.1.0';
 import {normalizeToolArguments} from './arguments.mjs?v=6.1.0';
 import {finalAnswerIssues} from './final-review.mjs?v=6.1.0';
@@ -140,7 +140,11 @@ export async function runAgentImpl({question,ai,space,signal,maxSteps=12,review=
         const answer=await ask([{role:'system',content:verifierPrompt()},{role:'user',content:'ORIGINALUPPDRAG:\n'+question+'\nAPI-YTA (opålitliga data, ingen implementation):\n'+JSON.stringify(verifierInput(space))+'\nTESTFORMAT SOM MÅSTE RÄTTAS: '+verificationFeedback}],verifierDefinitions(),'verifier');
         try{
           if(answer.truncated||answer.protocolError)throw Error('Testförslaget är avklippt eller har ogiltigt format.');
-          const raw=unwrapVerifierDecision(parseJSON(answer.text));space.verification={suite:normalizeSuite(raw,space),key:null,passed:false,results:[],executions:0,model:answer.model};
+          const raw=unwrapVerifierDecision(parseJSON(answer.text));const proposedSuite=normalizeSuite(raw,space);
+          const oracle=await checkSuiteAgainstOracle(space,proposedSuite);
+          const property=projectPropertyTest(space);const suite=property?Object.freeze([...proposedSuite,property]):proposedSuite;
+          if(oracle.applicable)record(space,emit,'verification_oracle',{checked:oracle.checked,fixture:oracle.fixture});
+          space.verification={suite,key:null,passed:false,results:[],executions:0,model:answer.model};
           record(space,emit,'verification_suite',{model:answer.model,tests:space.verification.suite});
           await executeSuite(space,emit);record(space,emit,'verification_result',{passed:space.verification.passed,results:space.verification.results});
         }catch(e){check(signal);verificationFormats++;verificationFeedback=e.message;record(space,emit,'verification_error',{message:e.message});if(verificationFormats>=4){stopReason='verification';break;}space.pendingIssues=space.pendingIssues.filter(x=>!x.startsWith('VERIFY: '));space.pendingIssues.push('VERIFY: '+e.message);}
