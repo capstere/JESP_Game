@@ -33,3 +33,22 @@ test('full advanced flow blocks plan-only and rubber-stamp review',async()=>{
  const r=await runAgent({question,space:w,ai,signal:signal(),advanced:true,maxSteps:12});
  assert.equal(r.unfinished,false);assert.equal(r.calls,8);assert.equal(w.reviews.length,2);assert.ok(w.reviews[0].issues.length);assert.ok(w.trace.some(e=>e.type==='finish_blocked'));assert.equal(w.files.has('index.html'),true);
 });
+
+test('DOM-free requested logic rejects browser globals and allows portable globalThis',()=>{
+ const w=workspace('Bygg en prototyp: Skilj DOM-fri logik i logic.js från rendering i game.js.');
+ w.write('logic.js','window.gameState={x:1}; document.addEventListener("keydown",()=>{});');
+ assert.match(projectCheck(w).issues.join(' '),/DOM-fri logik/);
+ w.write('logic.js','globalThis.gameState={x:1}; function move(){globalThis.gameState.x++;}');
+ assert.deepEqual(projectCheck(w).issues,[]);
+});
+test('explicit keyboard controls require case-insensitive event key matching',()=>{
+ const w=workspace('Bygg ett FPS-spel där W/S flyttar och A/D roterar.');
+ w.write('game.js',`window.addEventListener('keydown',event=>{if(event.key==='W')move();});`);
+ assert.match(projectCheck(w).issues.join(' '),/Tangentinput/);
+ w.write('game.js',`window.addEventListener('keydown',event=>{if(event.key.toLowerCase()==='w')move();});`);
+ assert.deepEqual(projectCheck(w).issues,[]);
+});
+test('browser dependent logic permitted unless explicitly required to be DOM-free',()=>{
+ const w=workspace('Bygg en webbsida');w.write('logic.js','window.gameState={};');
+ assert.deepEqual(projectCheck(w).issues,[]);
+});
