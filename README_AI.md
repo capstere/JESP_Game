@@ -1,6 +1,14 @@
-# JESP AI 6.0.1 — anonym backend och granskade leveranser
+# JESP AI 6.2 — fria avancerade modeller, verifierbara kontrakt och rollback
 
 Öppna https://capstere.github.io/JESP_Game/. Besökaren behöver inget konto, ingen API-nyckel och ingen betalning. Backend finns i ägarens befintliga Supabase-projekt på Free-planen. Detta är inte kontofri serverdrift: ägaren har redan GitHub- och Supabase-konton.
+
+## Version 6.2 – skydd mot observerade fel
+
+- **Originaluppdraget vinner över AI-planen.** En deterministisk kontroll skyddar kravet att FPS-spelaren ska skjuta ett synligt mål framför sig. I tidigare prov hittade en planeringsmodell på ett annat krav – poäng vid väggträff – och AI:n skrev sönder fungerande mållogik för att uppfylla det. Konfliktande plan-/granskningsinstruktioner loggas och blockeras; övriga riktiga fel måste fortfarande rättas.
+- **Automatisk rollback av regression.** När en filversion har klarat oberoende tester testas varje efterföljande filändring. Om den förstör ett tidigare verifierat beteende återställs den äldre filversionen, motexemplet sparas och rättningen underkänns.
+- **Atomiska flermodulsändringar med patch_files.** Upp till sex befintliga filer kan ändras tillsammans, med versionskontroll och exakt engångsmatchning före commit. Avbryts valideringen ändras ingen fil. Tester körs om efter genomförd transaktion.
+- **Starkare fri rollfördelning.** Den reflekterande granskningsmodellen används också vid arkitekturbeslut. Arbetsmodellen förblir snabb för vanliga kodsteg. Användaren kan välja andra katalogverifierade nollprismodeller; utbudet uppdateras dynamiskt.
+- **Begränsning:** Varken modellerna eller testerna gör det möjligt att garantera korrekthet i godtyckligt komplexa uppdrag. En välfungerande FPS-startmotor är ett verktyg, inte bevis på att agenten utvecklat ett helt spel autonomt.
 
 ## Motor och arbetsflöde
 
@@ -41,3 +49,7 @@ Det första skärpta provet räknade korrekt men använde {optimal, baseline} i 
 ## Diagnostik och styrning
 
 Avklippning sänker nu bara den berörda rollens/modellets nästa automatiska resonemangsinställning, inte alla andra roller. Felsökning och kritik behåller sin reflektionsbudget. Saknade identifierare i kodtester får radangivna källledtrådar. Flera klassiska scriptfiler kan syntaxkompileras tillsammans i den befintliga godkända sandboxen för att hitta deklarationskollisioner, utan att anropa programmet. Detta är inte ett DOM-test. Assertionverktyget har även equal, deepEqual och throws för begränsade JSON-liknande testdata. När filer och grundkontroller finns skickar styrningen uppdraget till ett konkret kandidatsvar och därefter separat kritik, inte en oändlig serie identiska tester. Kritiken kan fortfarande underkänna och begära mer arbete.
+
+## Release-gate 6.2
+
+Fullständiga ändringar publiceras först om GitHub Actions verifierar samtliga regressionstester samt två oförändrade riktiga agentuppdrag: projektoptimering (28 oberoende kant- och slumpfall samt korrekt slutsvar) och FPS med rörelse, rotation, startmål, poäng, reset och canvas. Se PR/Actions för de faktiskt körda resultaten; enhetstester med simulerad modell får inte felaktigt räknas som godkänt liveprov.
