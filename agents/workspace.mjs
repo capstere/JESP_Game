@@ -3,10 +3,19 @@ import {ASSERT_HARNESS} from './test-harness.mjs?v=6.1.0';
 import {failureDiagnostics,crossScriptSyntax} from './diagnostics.mjs?v=6.1.0';
 import {Workspace as BaseWorkspace,filename,check} from './runtime.mjs?v=5.1.1';
 import {projectCheck} from './quality.mjs?v=6.1.0';
+import {fpsStarter} from './game-scaffold.mjs?v=6.1.0';
 export class Workspace extends BaseWorkspace {
   async tool(name,args={}) {
     check(this.signal);
     if(!args||typeof args!=='object'||Array.isArray(args))throw new Error('Verktygsargument måste vara ett objekt.');
+    if(name==='scaffold_fps'){
+      if(this.taskKind!=='build'||!/(?:\bfps\b|first[- ]person|förstaperson)/i.test(this.question||''))throw new Error('FPS-startmotorn är enbart för ett uttryckligt FPS-bygguppdrag.');
+      const files=fpsStarter();
+      if(Object.keys(files).some(path=>this.files.has(path)))throw new Error('Startmotorn får inte ersätta befintliga filer. Fortsätt med edit_file/append_file.');
+      const saved=[];
+      for(const [path,source] of Object.entries(files))saved.push(this.write(path,source));
+      return {saved:true,template:'audited-fps-v1',files:saved.map(f=>({name:f.name,version:f.version,bytes:f.bytes})),note:'Startkoden är en granskad mall, inte kod som modellen har uppfunnit. Testa fortfarande uppdragets beteenden innan avslut.'};
+    }
     if(name==='test_page'){
       if(!this.allowCode)throw Error('Sidtester kräver användarens godkännande för kodkörning.');
       return executePageTest(this.files,args,this.signal);
