@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {Workspace,runAgent,filename} from '../agents/core.mjs';
-import {taskKind,normalizeStrategy,qualityIssues,reviewCheckIssues,projectCheck} from '../agents/quality.mjs';
+import {taskKind,normalizeStrategy,qualityIssues,reviewCheckIssues,projectCheck,editingDefinitions} from '../agents/quality.mjs';
 const signal=()=>new AbortController().signal;
 const workspace=(question='Bygg ett spel')=>{const w=new Workspace({signal:signal(),question,web:false});w.advanced=true;w.taskKind=taskKind(question);return w;};
 const strategy={objective:'Körbar app',assumptions:['Webbläsare, inga paket'],alternatives:['Canvas: liten och fristående','WebGL: mer komplex'],choice:'Canvas för minsta körbara prototyp',deliverables:['index.html','logic.js'],criteria:['Innehåller körbar kod med användarinput','Logiken klarar kantfall'],steps:['Bygg logik','Bygg UI','Testa och rätta']};
@@ -32,4 +32,45 @@ test('full advanced flow blocks plan-only and rubber-stamp review',async()=>{
  const ai={calls:0,lastModel:'MOCK',async ask(){this.calls++;return {text:JSON.stringify(replies.shift()),model:'MOCK'};}};
  const r=await runAgent({question,space:w,ai,signal:signal(),advanced:true,maxSteps:12});
  assert.equal(r.unfinished,false);assert.equal(r.calls,8);assert.equal(w.reviews.length,2);assert.ok(w.reviews[0].issues.length);assert.ok(w.trace.some(e=>e.type==='finish_blocked'));assert.equal(w.files.has('index.html'),true);
+});
+
+test('DOM-free requested logic rejects browser globals and allows portable globalThis',()=>{
+ const w=workspace('Bygg en prototyp: Skilj DOM-fri logik i logic.js från rendering i game.js.');
+ w.write('logic.js','window.gameState={x:1}; document.addEventListener("keydown",()=>{});');
+ assert.match(projectCheck(w).issues.join(' '),/DOM-fri logik/);
+ w.write('logic.js','globalThis.gameState={x:1}; function move(){globalThis.gameState.x++;}');
+ assert.deepEqual(projectCheck(w).issues,[]);
+});
+test('explicit keyboard controls require case-insensitive event key matching',()=>{
+ const w=workspace('Bygg ett FPS-spel där W/S flyttar och A/D roterar.');
+ w.write('game.js',`window.addEventListener('keydown',event=>{if(event.key==='W')move();});`);
+ assert.match(projectCheck(w).issues.join(' '),/Tangentinput/);
+ w.write('game.js',`window.addEventListener('keydown',event=>{if(event.key.toLowerCase()==='w')move();});`);
+ assert.deepEqual(projectCheck(w).issues,[]);
+});
+test('browser dependent logic permitted unless explicitly required to be DOM-free',()=>{
+ const w=workspace('Bygg en webbsida');w.write('logic.js','window.gameState={};');
+ assert.deepEqual(projectCheck(w).issues,[]);
+});
+
+test('FPS scaffold creates three safe files only for FPS build task',async()=>{
+ const w=workspace('Bygg FPS. Skilj DOM-fri logik i logic.js och W/S, A/D input.');
+ assert.ok(editingDefinitions(w).some(t=>t.function.name==='scaffold_fps'));
+ const result=await w.tool('scaffold_fps',{});
+ assert.equal(result.template,'audited-fps-v1');
+ assert.deepEqual(result.files.map(f=>f.name).sort(),['game.js','index.html','logic.js']);
+ assert.equal(projectCheck(w).passed,true,projectCheck(w).issues.join('; '));
+ assert.match(w.files.get('logic.js').content,/targetVisible/);
+ await assert.rejects(w.tool('scaffold_fps',{}),/får inte ersätta/);
+ const other=workspace('Bygg en hemsida');
+ assert.equal(editingDefinitions(other).some(t=>t.function.name==='scaffold_fps'),false);
+ await assert.rejects(other.tool('scaffold_fps',{}),/enbart/);
+});
+
+test('FPS project preflight rejects reset teleportation away from the initial target',()=>{
+ const w=workspace('Bygg FPS med window.gameState och window.resetGame samt synligt mål rakt fram från start.');
+ w.write('logic.js','const START={x:2.5,y:2.5,angle:0};const gameState={x:START.x,y:START.y};function resetGame(){gameState.x=0;gameState.y=0;}');
+ assert.match(projectCheck(w).issues.join(' '),/START.x/);
+ w.write('logic.js','const START={x:2.5,y:2.5,angle:0};const gameState={x:START.x,y:START.y};function resetGame(){gameState.x=START.x;gameState.y=START.y;}');
+ assert.deepEqual(projectCheck(w).issues,[]);
 });

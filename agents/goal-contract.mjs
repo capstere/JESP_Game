@@ -42,7 +42,7 @@ Returnera ENDAST JSON, högst 500 ord:
 {"verdict":"pass" eller "revise","answer":"kort bedömning","issues":["konkret brist och rättning"],"checks":[{"id":"C1","status":"pass" eller "fail" eller "unknown","evidence":["file:namn.js@v1" eller "tool:T3" eller "source:S1"],"finding":"vad i underlaget stödjer eller motsäger kravet"}]}.
 Samtliga C-kriterier måste bedömas. Varje pass behöver en verklig evidensreferens och en saklig förklaring. Referensen visar var underlaget finns, inte automatiskt att det är sant. Unknown/fail kräver revise. Skilj testad funktion från enbart statisk kodgranskning. Du kan inte själv ändra filer: ange rättningen till nästa arbetsrunda.`;
   return common+`
-Följ det valda angreppssättet och arbeta mot acceptanskriterierna. Börja med den minsta användbara leveransen, inte en roadmap. Gör konkreta teknikval, pröva svaga antaganden och använd faktiska verktygsresultat. Vid kritik: RÄTTA FILERNA, inte bara slutsvaret.
+Följ det valda angreppssättet och arbeta mot acceptanskriterierna. Börja med den minsta användbara leveransen, inte en roadmap. För webbaserade FPS-uppdrag finns verktyget scaffold_fps. Använd det för en helt TOM arbetsyta för en fungerande grund med tre filer, testa sedan de aktuella filerna och gör endast nödvändiga anpassningar. Startmotorn är en byggmall och inte modellgenererad kod. Gör konkreta teknikval, pröva svaga antaganden och använd faktiska verktygsresultat. Vid kritik: RÄTTA FILERNA, inte bara slutsvaret.
 write_file skapar en komplett fil. edit_file ändrar en exakt unik text med expected_version. append_file lägger till nästa avsnitt med expected_version; delvis uppbyggda filer är INTE färdiga leveranser. read_file kan läsa start_line/end_line. list_files visar versioner. check_project kontrollerar lokala referenser/struktur; det är inte ett funktionstest.
 Det finns INGEN 150-ordsgräns för en leverans. Vid snävt svarstak: skriv cirka 1500–3000 tecken PER VERKTYGSANROP och bygg vidare med append_file eller edit_file. Skicka alltid komplett JSON. Undvik att skriva om hela filer i onödan.
 För tester: test_js kör vanlig JavaScript utan DOM/import/nätverk. Använd {name:"logik.js",code:"assert(..., 'beskrivning')"}. Flera filer kan anges i files. Inbyggd assert räknar faktiskt körda kontroller. Testa normalt fall, kantfall och motexempel. Funktioner som beror på DOM kan inte testas här; ange begränsningen. Tester är avstängda utan användarens godkännande.
@@ -51,6 +51,8 @@ Använd erbjudna funktioner. Alternativt ENDAST JSON {"kind":"actions","actions"
 }
 export function editingDefinitions(space) {
   return [
+    ...(space.taskKind==='build'&&/(?:\bfps\b|first[- ]person|förstaperson)/i.test(space.question||'')
+      ?[fn('scaffold_fps','Create a small audited FPS web starter: index.html, DOM-free logic.js, game.js, controls W/S/A/D, shootable target, score and R reset. Use it FIRST only while the workspace has no files, then run code and browser tests. Existing files are NEVER replaced.',{},[])]:[]),
     fn('list_files','List workspace file names, versions and sizes.',{},[]),
     fn('append_file','Append a bounded chunk to an existing file. Requires the CURRENT version; stale calls fail.',{name:text,expected_version:{type:'integer'},content:text},['name','expected_version','content']),
     fn('edit_file','Replace exactly one matching substring. Read first. Requires CURRENT version. No regular expressions.',{name:text,expected_version:{type:'integer'},find:text,replace:text},['name','expected_version','find','replace']),
@@ -61,7 +63,22 @@ export function editingDefinitions(space) {
 }
 export function projectCheck(space) {
   const issues=[],files=[...space.files.values()],refs=[];
+  const domFreeLogic=/\bDOM[ -]?(?:fri|free|oberoende|independent)\b|without (?:the )?DOM/i.test(space.question||'');
+  const needsKeyboard=/\bW\s*\/\s*S\b|\bA\s*\/\s*D\b/i.test(space.question||'');
   for(const f of files) {
+    if(domFreeLogic&&/^(?:logic|logik)[\w-]*\.js$/i.test(f.name)){
+      const executable=f.content.replace(/\/\*[\s\S]*?\*\//g,'').replace(/^\s*\/\/.*$/gm,'');
+      if(/\b(?:window|document)\s*(?:\.|\[)/.test(executable))issues.push('DOM-fri logik i '+f.name+' får inte bero på window/document. Använd globalThis för delat tillstånd och lägg DOM-input i UI-filen.');
+    }
+    if(/(?:\bfps\b|förstaperson|first[- ]person)/i.test(space.question||'')&&/^(?:logic|logik)[\w-]*\.js$/i.test(f.name)){
+      const spawn=f.content.match(/\b(?:const|let)\s+START\s*=\s*\{\s*x\s*:\s*(-?\d+(?:\.\d+)?)\s*,\s*y\s*:\s*(-?\d+(?:\.\d+)?)/);
+      const reset=f.content.match(/function\s+resetGame\s*\([^)]*\)\s*\{([\s\S]{0,500}?)\}/)?.[1]||'';
+      if(spawn&&reset){
+        if(Number(spawn[1])!==0&&/\bgameState\.x\s*=\s*0(?:\s*[;,]|\s*$)/.test(reset))issues.push('FPS resetGame måste återställa x till den faktiska startpositionen START.x, inte till 0. Annars hamnar målet fel.');
+        if(Number(spawn[2])!==0&&/\bgameState\.y\s*=\s*0(?:\s*[;,]|\s*$)/.test(reset))issues.push('FPS resetGame måste återställa y till den faktiska startpositionen START.y, inte till 0.');
+      }
+    }
+    if(needsKeyboard&&/^(?:game|ui|input)[\w-]*\.js$/i.test(f.name)&&/\bevent\.key\s*===?\s*['"](?:W|A|S|D)['"]/.test(f.content)&&!/event\.key\.to(?:Lower|Upper)Case\s*\(/.test(f.content))issues.push('Tangentinput i '+f.name+' jämför bara stora tecken trots att webbläsaren kan skicka gemena w/a/s/d. Normalisera event.key eller använd KeyboardEvent.code.');
     if(/\.json$/i.test(f.name))try{JSON.parse(f.content);}catch{issues.push('Ogiltig JSON: '+f.name);}
     if(/\.(js|mjs|html)$/i.test(f.name)&&/^\s*```/.test(f.content))issues.push('Kodstaket i kodfil: '+f.name);
     if(/\.html$/i.test(f.name)) {

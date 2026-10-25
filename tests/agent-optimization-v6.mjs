@@ -45,7 +45,12 @@ return {checked};`;
   return await executeJS(source+'\n;\n'+tests,new AbortController().signal);
  },files['solver.js']);
  assert.equal(independent.passed,true,JSON.stringify(independent));const parsed=JSON.parse(independent.value);assert.equal(parsed.checked,28);
- assert.ok((await page.locator('#status').getAttribute('class')).includes('success'),'Agent must complete its own evidence gates');assert.deepEqual(errors,[]);assert.ok(requests.length>0&&requests.every(r=>!r.authenticated));assert.ok(responses.length>0&&responses.every(r=>r.status===200&&Number(r.usage?.cost)===0),'Every real answer must report zero cost');
+ assert.ok((await page.locator('#status').getAttribute('class')).includes('success'),'Agent must complete its own evidence gates');assert.deepEqual(errors,[]);assert.ok(requests.length>0&&requests.every(r=>!r.authenticated));// A recovered 504 is a failed request, not a successful paid inference.
+ const completed=responses.filter(r=>r.status===200),failed=responses.filter(r=>r.status!==200);
+ assert.ok(completed.length>0&&completed.every(r=>r.usage?.cost===0&&r.usage?.cost_details?.upstream_inference_cost===0),'Every completed AI inference must report zero cost');
+ assert.ok(requests.length>0&&requests.every(r=>!r.authenticated&&(r.model?.endsWith(':free')||r.model==='kilo-auto/free')),'Only anonymous explicitly free models may be requested');
+ assert.ok(failed.every(r=>[429,500,502,503,504].includes(r.status)),'Unexpected AI error status must be investigated');
+
  writeFileSync(dir+'/independent.json',JSON.stringify({mockedAI:false,authenticated:false,checks:parsed.checked,publishedPage:process.env.PUBLISHED==='1',explanationChecks:5,scope:'Four boundary cases, one requested problem, twenty unseen enumerated comparisons, three invalid-budget checks',models:[...new Set(responses.map(r=>r.model).filter(Boolean))],solution,independent,status,at:new Date().toISOString()},null,2));
  console.log('VERIFIED_AGENT_OPTIMIZATION',JSON.stringify({checks:parsed.checked,solution}));
 }catch(e){writeFileSync(dir+'/failure.json',JSON.stringify({error:String(e),requests,responses,errors},null,2));try{await page.screenshot({path:dir+'/failure.png',fullPage:true});writeFileSync(dir+'/last-ui.json',JSON.stringify(await page.evaluate(()=>({status:document.getElementById('status')?.textContent,log:document.getElementById('log')?.textContent})),null,2));}catch{}throw e;}

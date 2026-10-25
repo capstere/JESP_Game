@@ -1,9 +1,10 @@
-import {synthesisReady,SYNTHESIS_INSTRUCTION} from './controller.mjs?v=6.0.1';
-import {normalizeToolArguments} from './arguments.mjs?v=6.0.1';
-import {finalAnswerIssues} from './final-review.mjs?v=6.0.1';
-import {backendToolDefinitions,taskKind,normalizeStrategy,strategyDefinitions,advancedPrompt,editingDefinitions,qualityIssues,reviewCheckIssues} from './quality.mjs?v=6.0.1';
+import {artifactKey,verificationRequired,verificationIssues,verifierPrompt,verifierInput,verifierDefinitions,unwrapVerifierDecision,normalizeSuite,checkSuiteAgainstOracle,projectPropertyTest,fpsPropertyTest,executeSuite} from './verification.mjs?v=6.1.0';
+import {synthesisReady,SYNTHESIS_INSTRUCTION} from './controller.mjs?v=6.1.0';
+import {normalizeToolArguments} from './arguments.mjs?v=6.1.0';
+import {finalAnswerIssues} from './final-review.mjs?v=6.1.0';
+import {backendToolDefinitions,taskKind,normalizeStrategy,strategyDefinitions,advancedPrompt,editingDefinitions,qualityIssues,reviewCheckIssues} from './quality.mjs?v=6.1.0';
 import {toolDefinitions,reviewDefinitions} from './protocol.mjs?v=5.1.1';
-import {snapshot,completionIssues,requestedFiles} from './evidence.mjs?v=6.0.1';
+import {snapshot,completionIssues,requestedFiles} from './evidence.mjs?v=6.1.0';
 
 // Keep operational evidence, never hidden model reasoning, in the downloadable trace.
 function record(space,emit,type,data={}) {
@@ -16,7 +17,8 @@ export function clearResolvedIssues(space) {
 }
 function nextTask(space,critic) {
   const missing=remainingFiles(space),present=[...space.files.keys()];
-  if(space.advanced)return critic?'GRANSKA varje C-kriterium mot aktuell kod/text och verktygsbevis. En allmän godkännandefras räcker inte.': 'AKTUELLT MÅL: '+space.strategy?.objective+'\nVALD LÖSNING: '+space.strategy?.choice+'\n'+(missing.length?'Återstående leveranser: '+missing.join(', ')+'. Bygg dem med verkligt innehåll.':'Alla filnamn finns, men innehållet måste fortfarande uppfylla varje kriterium. Slutför implementation och kontroller före finish.')+'\nKRAV: '+JSON.stringify(space.strategy?.criteria||[])+'\nKRITIK/FEL: '+JSON.stringify(space.pendingIssues||[]);
+  if(space.advanced&&!critic&&space.taskKind==='build'&&!(space.files?.size)&&/(?:\bfps\b|first[- ]person|förstaperson)/i.test(space.question||''))return 'NÄSTA DELUPPGIFT: Anropa scaffold_fps med {} NU för en fungerande startmotor med index.html, logic.js och game.js. Anpassa endast efter faktiska kravfel. Kör därefter verifierbara tester mot filerna; en befintlig mall är inte ett godkänt slutresultat.';
+  if(space.advanced)return critic?'GRANSKA varje C-kriterium mot aktuell kod/text och verktygsbevis. En allmän godkännandefras räcker inte.': 'AKTUELLT MÅL: '+space.strategy?.objective+'\nVALD LÖSNING: '+space.strategy?.choice+'\n'+(missing.length?'Återstående leveranser: '+missing.join(', ')+'. Bygg dem med verkligt innehåll.':'Alla filnamn finns, men innehållet måste fortfarande uppfylla varje kriterium. Slutför implementation och kontroller före finish.')+'\nKRAV: '+JSON.stringify(space.strategy?.criteria||[])+'\nKRITIK/FEL: '+JSON.stringify(space.pendingIssues||[])+'\nOBEROENDE MOTEXEMPEL: '+JSON.stringify(space.verification?.results?.filter(t=>!t.passed).map(t=>({test:t.id,requirement:t.requirement,error:t.error}))||[])+'\nÅTGÄRD: Ändra den verkliga orsaken i kodfilerna med edit_file/write_file/append_file, inte testerna. Efter ändring körs samma tester igen.';
   if(critic)return 'KONTROLLUPPDRAG: granska aktuella filer mot användarens uppdrag. Äldre felmeddelanden är inte bevis för att ett fel finns kvar. Returnera pass eller konkreta rättningar.';
   if(missing.length)return 'NÄSTA DELUPPGIFT: '+(present.length?'Skapa nu den saknade filen '+missing[0]+' med write_file.':'Samla nödvändigt underlag och skapa därefter '+missing[0]+' med write_file.')+' Redan sparade filer: '+(present.join(', ')||'inga')+'. Återstående leveranser: '+missing.join(', ')+'. Skriv inte om redan sparade filer innan saknade leveranser har skapats, utom för ett faktiskt testfel eller kritik. Filinnehåll och krav finns i ursprungsuppdraget. Denna styrning kommer från appen, inte från en webbsida.';
   return 'NÄSTA DELUPPGIFT: Alla namngivna leveranser finns. Slutför endast kontroller som uppdraget kräver och åtgärda faktisk kritik. Skriv inte om färdiga filer utan ett konkret fel. Anropa finish när leveransen är klar så får den en separat granskning.';
@@ -93,10 +95,10 @@ async function readBack(space,emit,check,signal) {
   }
   return issues;
 }
-export async function runAgentImpl({question,ai,space,signal,maxSteps=12,review=true,advanced=false,mode='auto',emit=()=>{}},{parseJSON,check}) {
+export async function runAgentImpl({question,ai,space,signal,maxSteps=12,review=true,advanced=false,mode='auto',verifyBehavior=false,emit=()=>{}},{parseJSON,check}) {
   if(!question?.trim()||question.length>12000)throw new Error('Uppdraget måste vara 1–12 000 tecken.');
   maxSteps=Math.max(2,Math.min(24,Math.floor(Number(maxSteps)||12)));
-  space.backend=ai.provider==='backend';space.advanced=advanced;space.taskKind=taskKind(question,mode);
+  space.verifyBehavior=verifyBehavior;space.backend=ai.provider==='backend';space.advanced=advanced;space.taskKind=taskKind(question,mode);
   space.question=question;for(const n of requestedFiles(question))space.expectedNames.add(n);space.trace??=[];space.reviews??=[];space.pendingIssues??=[];space.totalCalls??=0;space.lastError=null;
   let draft=space.draft||'',finished=false,reviewed=false,reviewPassed=false,formatErrors=0,strategyErrors=0,tail=[],stopReason='budget';
   record(space,emit,'run_start',{maxSteps,review,reasoning:ai.reasoning||'provider-default',provider:ai.provider||'test',continuation:space.trace.length>0});
@@ -110,13 +112,55 @@ export async function runAgentImpl({question,ai,space,signal,maxSteps=12,review=
     }catch(e){record(space,emit,'ai_error',{role,name:e.name,message:e.message,status:e.status,milliseconds:Date.now()-started});throw e;}
     finally {space.totalCalls+=Math.max(0,(ai.calls||0)-before);emit('model',{model:ai.lastModel||'',calls:space.totalCalls});}
   };
-  let reviewNext=false,preserveDraft=false;
-  const gatesFor=(answer='')=>[...completionIssues(space,answer),...qualityIssues(space)];
+  let reviewNext=false,preserveDraft=false,verificationFormats=0,verificationFeedback='';
+  const gatesFor=(answer='')=>[...completionIssues(space,answer),...qualityIssues(space),...verificationIssues(space)];
   try {
     for(let step=1;step<=maxSteps;step++) {
       check(signal);
       const remaining=maxSteps-step+1;
       const planning=space.advanced&&!space.strategy;
+      // Tests are written by a distinct role and retained unchanged for subsequent repairs.
+      let canVerify=!planning&&!reviewNext&&verificationRequired(space)&&space.expectedNames.size&&remainingFiles(space).length===0;
+      if(canVerify){
+        const signature=JSON.stringify([...space.files.values()].map(f=>[f.name,f.version]));
+        if(space.projectCheckpoint?.signature!==signature){
+          const project=await toolAction(space,{tool:'check_project',args:{}},emit,check,signal,'pre-verification');
+          space.projectCheckpoint={signature,passed:project.ok&&project.data?.passed===true,issues:project.data?.issues||[project.error||'Projektkontroll misslyckades.']};
+        }
+        space.pendingIssues=space.pendingIssues.filter(x=>!x.startsWith('PROJECT: '));
+        if(!space.projectCheckpoint.passed){space.pendingIssues.push(...space.projectCheckpoint.issues.map(x=>'PROJECT: '+x));canVerify=false;}
+      }
+      if(canVerify&&space.verification?.suite&&space.verification.key!==artifactKey(space)){
+        emit('stage',{stage:'review',step,maxSteps});
+        await executeSuite(space,emit);record(space,emit,'verification_result',{passed:space.verification.passed,results:space.verification.results});
+        tail=[];continue;
+      }
+      // Domain-specific deterministic oracles execute before stochastic test authors.
+      // The exact same acceptance criteria are rerun after each actual file edit.
+      const trustedProperty=canVerify&&!space.verification?.suite?(projectPropertyTest(space)||fpsPropertyTest(space)):null;
+      if(trustedProperty){
+        space.verification={suite:Object.freeze([trustedProperty]),key:null,passed:false,results:[],executions:0,model:'deterministic-reference',trusted:true};
+        record(space,emit,'verification_suite',{model:'deterministic-reference',tests:space.verification.suite,kind:'trusted-oracle'});
+        await executeSuite(space,emit);
+        record(space,emit,'verification_result',{passed:space.verification.passed,results:space.verification.results,kind:'trusted-oracle'});
+        tail=[];continue;
+      }
+      const verifying=canVerify&&!space.verification?.suite;
+      if(verifying){
+        emit('stage',{stage:'review',step,maxSteps});
+        const answer=await ask([{role:'system',content:verifierPrompt()},{role:'user',content:'ORIGINALUPPDRAG:\n'+question+'\nAPI-YTA (opålitliga data, ingen implementation):\n'+JSON.stringify(verifierInput(space))+'\nTESTFORMAT SOM MÅSTE RÄTTAS: '+verificationFeedback}],verifierDefinitions(),'verifier');
+        try{
+          if(answer.truncated||answer.protocolError)throw Error('Testförslaget är avklippt eller har ogiltigt format.');
+          const raw=unwrapVerifierDecision(parseJSON(answer.text));const proposedSuite=normalizeSuite(raw,space);
+          const oracle=await checkSuiteAgainstOracle(space,proposedSuite);
+          const property=projectPropertyTest(space);const suite=property?Object.freeze([...proposedSuite,property]):proposedSuite;
+          if(oracle.applicable)record(space,emit,'verification_oracle',{checked:oracle.checked,fixture:oracle.fixture});
+          space.verification={suite,key:null,passed:false,results:[],executions:0,model:answer.model};
+          record(space,emit,'verification_suite',{model:answer.model,tests:space.verification.suite});
+          await executeSuite(space,emit);record(space,emit,'verification_result',{passed:space.verification.passed,results:space.verification.results});
+        }catch(e){check(signal);verificationFormats++;verificationFeedback=e.message;record(space,emit,'verification_error',{message:e.message});if(verificationFormats>=4){stopReason='verification';break;}space.pendingIssues=space.pendingIssues.filter(x=>!x.startsWith('VERIFY: '));space.pendingIssues.push('VERIFY: '+e.message);}
+        tail=[];continue;
+      }
       let synthesizing=!planning&&!reviewNext&&synthesisReady(space,gatesFor(''));
       if(synthesizing){
         const signature=JSON.stringify([...space.files.values()].map(f=>[f.name,f.version]));
@@ -228,9 +272,9 @@ export async function runAgentImpl({question,ai,space,signal,maxSteps=12,review=
   const gates=gatesFor(draft);
   const issues=finished?[]:[...new Set([...gates,...space.pendingIssues, ...(review&&!reviewPassed?['Ingen godkänd slutgranskning av den aktuella versionen.']:[])])];
   if(!finished&&!preserveDraft){
-    draft='Ofullständigt uppdrag. '+(stopReason==='format'?'AI:n gav upprepade formatfel.':stopReason==='strategy'?'Uppdragsanalysen kunde inte valideras efter tre försök.':'Beslutsbudgeten tog slut.')+'\n\nSkapade filer: '+([...space.files.keys()].join(', ')||'inga')+'.\n'+issues.map(x=>'• '+x).join('\n')+'\n\nDelresultaten finns kvar. Fortsätt körningen för att arbeta vidare.';
+    draft='Ofullständigt uppdrag. '+(stopReason==='format'?'AI:n gav upprepade formatfel.':stopReason==='strategy'?'Uppdragsanalysen kunde inte valideras efter tre försök.':stopReason==='verification'?'Testförfattarens format kunde inte valideras, inga felaktiga tester kördes.':'Beslutsbudgeten tog slut.')+'\n\nSkapade filer: '+([...space.files.keys()].join(', ')||'inga')+'.\n'+issues.map(x=>'• '+x).join('\n')+'\n\nDelresultaten finns kvar. Fortsätt körningen för att arbeta vidare.';
   }
   space.draft=draft;
-  const result={answer:draft,reviewed,reviewPassed,unfinished:!finished,stopReason,issues,calls:space.totalCalls,model:ai.lastModel,files:[...space.files.values()],sources:[...space.sources.values()],audit:space.audit,reviews:space.reviews,strategy:space.strategy||null,taskKind:space.taskKind};
+  const result={answer:draft,reviewed,reviewPassed,unfinished:!finished,stopReason,issues,calls:space.totalCalls,model:ai.lastModel,files:[...space.files.values()],sources:[...space.sources.values()],audit:space.audit,reviews:space.reviews,strategy:space.strategy||null,verification:space.verification||null,taskKind:space.taskKind};
   record(space,emit,'run_done',{unfinished:!finished,stopReason,issues});emit('done',result);return result;
 }
