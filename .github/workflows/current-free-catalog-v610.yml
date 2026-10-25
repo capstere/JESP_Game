@@ -1,0 +1,26 @@
+name: Read current free-model catalogue
+on:
+  push:
+    branches: [probe/current-free-catalog-v610]
+    paths: [.github/workflows/current-free-catalog-v610.yml]
+permissions:
+  contents: read
+jobs:
+  catalogue:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Read public backend catalogue, no AI generation
+        run: |
+          node --input-type=module <<'JS'
+          import {writeFileSync} from 'node:fs';
+          const r=await fetch('https://dzjjffgohxeoahtflqjo.supabase.co/functions/v1/jesp-gateway/models',{signal:AbortSignal.timeout(30000)});
+          const raw=await r.text();if(!r.ok)throw Error('Catalogue HTTP '+r.status+': '+raw.slice(0,300));
+          const data=JSON.parse(raw);const report={at:new Date().toISOString(),inferencePerformed:false,models:data.models};
+          writeFileSync('catalogue.json',JSON.stringify(report,null,2));console.log(JSON.stringify(report));
+          JS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: current-free-catalogue
+          path: catalogue.json
+          retention-days: 7
