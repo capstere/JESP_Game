@@ -59,18 +59,39 @@ export function strategyDefinitions() {
  schema.properties.approach_a={type:'string',description:'First feasible approach and its tradeoff.'};
  schema.properties.approach_b={type:'string',description:'A distinct second feasible approach and its tradeoff.'};
  schema.properties.criteria.minItems=2;schema.properties.criteria.maxItems=5;
+ schema.properties.deliverables={type:'array',minItems:0,maxItems:6,items:{type:'string',description:'ONLY a plain file basename such as solver.js or resultat.json. No descriptions, no test steps, no extra words.'}};
  schema.required=[...schema.required.filter(k=>k!=='alternatives'),'approach_a','approach_b'];
  return definitions;
 }
 const itemText=value=>typeof value==='string'?value:typeof value?.requirement==='string'?value.requirement:typeof value?.description==='string'?value.description:typeof value?.text==='string'?value.text:'';
+
+// Observed free model put file descriptions and a procedural test task in the filename list.
+// Only recognize exact, unambiguous BASENAME + prose separators; never clean dangerous paths.
+export function normalizeModelDeliverables(values) {
+ const notes=[],names=[];
+ for(const value of values) {
+  if(typeof value!=='string'){names.push(value);continue;}
+  const original=value.trim();
+  const m=/^([\p{L}\p{N}_-]+\.(?:js|mjs|html|css|json|md|txt|csv|py|svg|yml|yaml|xml))\s+(?:(?:med|with|som|innehållande|containing|inklusive|including)\b|[-–—:]\s)/iu.exec(original);
+  if(m) { names.push(m[1]);notes.push({kind:'deliverable_description',original,normalized:m[1]});continue; }
+  if(/^(?:testkörning|test(?:ing| run|s)?|testa(?:ning)?|kör tester|run tests|verify|verifiering|granskning)\b/iu.test(original)&&!/^\S+\.(?:js|mjs|html|css|json|md|txt|csv|py|svg|yml|yaml|xml)$/iu.test(original)) {
+   notes.push({kind:'procedural_step_not_file',original});continue;
+  }
+  names.push(value); // keep malformed/path-like names unchanged so validateName rejects them
+ }
+ return {names,notes};
+}
+
 export function normalizeStrategy(value,space,validateName) {
  if(!value||typeof value!=='object')return baseStrategy(value,space,validateName);
  const normalized={...value};
  if(typeof value.approach_a==='string'&&typeof value.approach_b==='string')normalized.alternatives=[value.approach_a,value.approach_b];
  for(const key of ['alternatives','criteria','steps','assumptions'])if(Array.isArray(normalized[key]))normalized[key]=normalized[key].map(itemText);
+ const fix=Array.isArray(normalized.deliverables)?normalizeModelDeliverables(normalized.deliverables):{notes:[],names:normalized.deliverables};
+ normalized.deliverables=fix.names;
  const contract=baseStrategy(normalized,space,validateName);
  const protectedContract=enforceUserContract(contract,space.question);
- space.contractCorrections=(space.contractCorrections||[]).concat(protectedContract.notices);
+ space.contractCorrections=(space.contractCorrections||[]).concat(fix.notes,protectedContract.notices);
  return protectedContract.contract;
 }
 

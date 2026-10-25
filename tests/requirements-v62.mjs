@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {enforceUserContract,userRequiresTarget,unsupportedReviewerIssue} from '../agents/requirements.mjs';
-import {normalizeStrategy} from '../agents/quality.mjs';
+import {normalizeStrategy,normalizeModelDeliverables,strategyDefinitions} from '../agents/quality.mjs';
 import {Workspace,runAgent} from '../agents/core.mjs';
 import {executeSuite} from '../agents/verification.mjs';
 const request='Bygg en FPS-prototyp där mellanslag skjuter ett synligt mål rakt fram från start och ger poäng. Visa väggar med raycasting. W/S flyttar, A/D roterar, R återställer.';
@@ -60,4 +60,26 @@ test('atomic two-file patch protects both files on invalid second edit',async()=
  assert.equal(s.files.get('b.js').content,'let b=4;');
  await assert.rejects(s.tool('patch_files',{edits:[{name:'a.js',expected_version:1,find:'a=3',replace:'a=8'}]}),/Versionskonflikt/);
  assert.equal(s.files.get('a.js').content,'let a=3;');
+});
+
+test('real free architect response with descriptive filenames and procedural test step is recoverable',()=>{
+ const input={objective:'solve project selection',approach_a:'enumerate combinations',approach_b:'dynamic programming',choice:'enumerate combinations',assumptions:[],criteria:['all constraints','test boundary'],steps:['implement solution','run assertions'],deliverables:[
+ 'solver.js med selectProjects-funktion',
+ 'resultat.json med {optimal:{...}, baseline:{...}}',
+ 'Testkörning med ≥4 assertions och loggade värden'
+ ]};
+ const space={question:'Skapa solver.js och resultat.json för optimering',taskKind:'build',expectedNames:new Set(['solver.js','resultat.json'])};
+ const got=normalizeStrategy(input,space,name=>{if(!/^[a-zA-Z0-9_-]+\.(?:js|json)$/.test(name))throw Error('invalid filename: '+name);});
+ assert.deepEqual(got.deliverables,['solver.js','resultat.json']);
+ assert.equal(space.contractCorrections.filter(x=>x.kind==='deliverable_description').length,2);
+ assert.equal(space.contractCorrections.filter(x=>x.kind==='procedural_step_not_file').length,1);
+ const schema=strategyDefinitions()[0].function.parameters.properties.deliverables;
+ assert.match(schema.items.description,/plain file basename/);
+});
+test('filename cleanup rejects unsafe paths or ambiguous user deliverables',()=>{
+ const data=normalizeModelDeliverables(['../solver.js med ändring','report.js med en rapport','README.md','a/b.js','solver.js - generic algorithm']);
+ assert.deepEqual(data.names,['../solver.js med ändring','report.js','README.md','a/b.js','solver.js']);
+ const input={objective:'build',approach_a:'A',approach_b:'B',choice:'A',deliverables:['../secret.js med farlig väg'],criteria:['x','y'],steps:['build'],assumptions:[]};
+ const space={question:'Skapa solver.js',taskKind:'build',expectedNames:new Set(['solver.js'])};
+ assert.throws(()=>normalizeStrategy(input,space,name=>{if(name.includes('/'))throw Error('unsafe path');}),/unsafe path/);
 });
