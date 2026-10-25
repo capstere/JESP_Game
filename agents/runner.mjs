@@ -1,4 +1,4 @@
-import {artifactKey,verificationRequired,verificationIssues,verifierPrompt,verifierInput,verifierDefinitions,unwrapVerifierDecision,normalizeSuite,checkSuiteAgainstOracle,projectPropertyTest,fpsPropertyTest,executeSuite} from './verification.mjs?v=6.1.0';
+import {artifactKey,verificationRequired,verificationIssues,verifierPrompt,verifierInput,verifierDefinitions,unwrapVerifierDecision,normalizeSuite,checkSuiteAgainstOracle,projectPropertyTest,fpsPropertyTest,executeSuite} from './verification.mjs?v=6.2.0';
 import {synthesisReady,SYNTHESIS_INSTRUCTION} from './controller.mjs?v=6.1.0';
 import {normalizeToolArguments} from './arguments.mjs?v=6.1.0';
 import {finalAnswerIssues} from './final-review.mjs?v=6.1.0';
@@ -242,6 +242,14 @@ export async function runAgentImpl({question,ai,space,signal,maxSteps=12,review=
         const report={time:new Date().toISOString(),verdict:decision.verdict||'invalid',answer:String(decision.answer||''),issues:space.pendingIssues,checks:decision.checks||[],answer_check:decision.answer_check||null,final_answer:decision.final_answer||null,model:answer.model,versions:[...space.files.values()].map(f=>({name:f.name,version:f.version}))};
         space.reviews.push(report);emit('review',report);record(space,emit,'review',{verdict:report.verdict,issues:report.issues});
         if(decision.verdict==='pass'&&!space.pendingIssues.length){draft=candidate;space.draft=draft;reviewPassed=true;finished=true;stopReason='complete';record(space,emit,'answer_review',{status:'pass',check:decision.answer_check||null});break;}
+        if(decision.verdict==='revise'&&rejected.length&&!space.pendingIssues.length){
+          // Retry critic on the original user contract, not an invented wall-scoring requirement.
+          // Never silently relabel a model's revise verdict as a pass.
+          space.reviewConflicts=(space.reviewConflicts||0)+1;
+          record(space,emit,'review_retry_required',{reason:'contradicts_original_user_requirement',attempt:space.reviewConflicts});
+          if(space.reviewConflicts>=2){stopReason='review_conflict';break;}
+          reviewNext=true;tail=[];continue;
+        }
         reviewNext=false;tail=[];
         emit('warning','Kritiken skickas tillbaka till arbetsagenten för faktiska rättningar.');
         continue;
@@ -293,7 +301,7 @@ export async function runAgentImpl({question,ai,space,signal,maxSteps=12,review=
   const gates=gatesFor(draft);
   const issues=finished?[]:[...new Set([...gates,...space.pendingIssues, ...(review&&!reviewPassed?['Ingen godkänd slutgranskning av den aktuella versionen.']:[])])];
   if(!finished&&!preserveDraft){
-    draft='Ofullständigt uppdrag. '+(stopReason==='format'?'AI:n gav upprepade formatfel.':stopReason==='strategy'?'Uppdragsanalysen kunde inte valideras efter tre försök.':stopReason==='verification'?'Testförfattarens format kunde inte valideras, inga felaktiga tester kördes.':'Beslutsbudgeten tog slut.')+'\n\nSkapade filer: '+([...space.files.keys()].join(', ')||'inga')+'.\n'+issues.map(x=>'• '+x).join('\n')+'\n\nDelresultaten finns kvar. Fortsätt körningen för att arbeta vidare.';
+    draft='Ofullständigt uppdrag. '+(stopReason==='format'?'AI:n gav upprepade formatfel.':stopReason==='strategy'?'Uppdragsanalysen kunde inte valideras efter tre försök.':stopReason==='verification'?'Testförfattarens format kunde inte valideras, inga felaktiga tester kördes.':stopReason==='review_conflict'?'Granskaren fortsatte begära ett krav som motsäger originaluppdraget; leveransen markeras ofullständig.':'Beslutsbudgeten tog slut.')+'\n\nSkapade filer: '+([...space.files.keys()].join(', ')||'inga')+'.\n'+issues.map(x=>'• '+x).join('\n')+'\n\nDelresultaten finns kvar. Fortsätt körningen för att arbeta vidare.';
   }
   space.draft=draft;
   const result={answer:draft,reviewed,reviewPassed,unfinished:!finished,stopReason,issues,calls:space.totalCalls,model:ai.lastModel,files:[...space.files.values()],sources:[...space.sources.values()],audit:space.audit,reviews:space.reviews,strategy:space.strategy||null,verification:space.verification||null,taskKind:space.taskKind};

@@ -1,4 +1,4 @@
-import {projectSelectionFixture,checkSuiteAgainstOracle,projectPropertyTest,fpsPropertyTest} from './oracle.mjs?v=6.1.0';
+import {projectSelectionFixture,checkSuiteAgainstOracle,projectPropertyTest,fpsPropertyTest} from './oracle.mjs?v=6.2.0';
 export {checkSuiteAgainstOracle,projectPropertyTest,fpsPropertyTest};
 // Independent executable checks. Model opinion alone cannot set passed=true.
 export const artifactKey = space => JSON.stringify([...space.files.values()].map(f=>[f.name,f.version]).sort((a,b)=>a[0].localeCompare(b[0])));

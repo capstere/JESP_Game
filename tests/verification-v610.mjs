@@ -91,3 +91,11 @@ test('trusted FPS UI contract targets actual initial coordinates and user input,
  assert.doesNotMatch(t.code,/gameState\.x===0/);
  assert.equal(fpsPropertyTest({...s,question:'Skapa en FPS-plan'}),null);
 });
+
+test('FPS source-based behavior oracle detects scoring without target deactivation',async()=>{
+ const {fpsPropertyTest}=await import('../agents/oracle.mjs');
+ const s=setup();s.question='Bygg en FPS med window.gameState och window.resetGame. W/S flyttar, A/D roterar, Space skjuter synligt startmål, R återställer.';
+ s.write('index.html','<!doctype html><canvas></canvas>');
+ const t=fpsPropertyTest(s);
+ assert.match(t.code,/deactivate the hit target/);assert.match(t.code,/restore the starting target/);
+});
