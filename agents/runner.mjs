@@ -1,4 +1,4 @@
-import {artifactKey,verificationRequired,verificationIssues,verifierPrompt,normalizeSuite,executeSuite} from './verification.mjs?v=6.1.0';
+import {artifactKey,verificationRequired,verificationIssues,verifierPrompt,verifierInput,normalizeSuite,executeSuite} from './verification.mjs?v=6.1.0';
 import {synthesisReady,SYNTHESIS_INSTRUCTION} from './controller.mjs?v=6.1.0';
 import {normalizeToolArguments} from './arguments.mjs?v=6.1.0';
 import {finalAnswerIssues} from './final-review.mjs?v=6.1.0';
@@ -111,7 +111,7 @@ export async function runAgentImpl({question,ai,space,signal,maxSteps=12,review=
     }catch(e){record(space,emit,'ai_error',{role,name:e.name,message:e.message,status:e.status,milliseconds:Date.now()-started});throw e;}
     finally {space.totalCalls+=Math.max(0,(ai.calls||0)-before);emit('model',{model:ai.lastModel||'',calls:space.totalCalls});}
   };
-  let reviewNext=false,preserveDraft=false,verificationFormats=0;
+  let reviewNext=false,preserveDraft=false,verificationFormats=0,verificationFeedback='';
   const gatesFor=(answer='')=>[...completionIssues(space,answer),...qualityIssues(space),...verificationIssues(space)];
   try {
     for(let step=1;step<=maxSteps;step++) {
@@ -128,13 +128,13 @@ export async function runAgentImpl({question,ai,space,signal,maxSteps=12,review=
       const verifying=canVerify&&!space.verification?.suite;
       if(verifying){
         emit('stage',{stage:'review',step,maxSteps});
-        const answer=await ask([{role:'system',content:verifierPrompt()},{role:'user',content:'ORIGINALUPPDRAG:\n'+question+'\nOPÅLITLIGT FILUNDERLAG:\n'+JSON.stringify(snapshot(space,90000))}],undefined,'verifier');
+        const answer=await ask([{role:'system',content:verifierPrompt()},{role:'user',content:'ORIGINALUPPDRAG:\n'+question+'\nAPI-YTA (opålitliga data, ingen implementation):\n'+JSON.stringify(verifierInput(space))+'\nTESTFORMAT SOM MÅSTE RÄTTAS: '+verificationFeedback}],undefined,'verifier');
         try{
           if(answer.truncated||answer.protocolError)throw Error('Testförslaget är avklippt eller har ogiltigt format.');
           const raw=parseJSON(answer.text);space.verification={suite:normalizeSuite(raw,space),key:null,passed:false,results:[],executions:0,model:answer.model};
           record(space,emit,'verification_suite',{model:answer.model,tests:space.verification.suite});
           await executeSuite(space,emit);record(space,emit,'verification_result',{passed:space.verification.passed,results:space.verification.results});
-        }catch(e){check(signal);verificationFormats++;record(space,emit,'verification_error',{message:e.message});if(verificationFormats>=2){stopReason='verification';break;}space.pendingIssues.push('VERIFY: '+e.message);}
+        }catch(e){check(signal);verificationFormats++;verificationFeedback=e.message;record(space,emit,'verification_error',{message:e.message});if(verificationFormats>=2){stopReason='verification';break;}space.pendingIssues.push('VERIFY: '+e.message);}
         tail=[];continue;
       }
       let synthesizing=!planning&&!reviewNext&&synthesisReady(space,gatesFor(''));

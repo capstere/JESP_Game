@@ -6,21 +6,26 @@ export function buildTestPage(files,page,code,nonce) {
   if(typeof DOMParser==='undefined')throw Error('Browserns DOM-parser saknas.');
   if(typeof code!=='string'||!code.trim()||code.length>8000)throw Error('Sidtest kräver 1–8000 tecken testkod.');
   const html=files.get(page);if(!html||!page.endsWith('.html'))throw Error('HTML-filen saknas.');
-  const doc=new DOMParser().parseFromString(html.content,'text/html');
+  // Template contents remain inert: even image/iframe URLs cannot load while parsing.
+  const doc=document.implementation.createHTMLDocument('');
+  const template=document.createElement('template');template.innerHTML=html.content;const root=template.content;
+  const deferred=[];
   const used=new Map([[html.name,html.version]]);
   const resource=raw=>{const name=String(raw).replace(/^\.\//,'').split(/[?#]/)[0];if(!/^[\p{L}\p{N}][\p{L}\p{N} ._-]*\.(?:js|css)$/u.test(name)||!files.has(name))throw Error('Sidtest stöder bara befintliga lokala resurser: '+raw);const f=files.get(name);used.set(name,f.version);return f;};
-  doc.querySelectorAll('base,meta[http-equiv],iframe,frame,object,embed').forEach(e=>e.remove());
-  for(const el of doc.querySelectorAll('script')){
+  root.querySelectorAll('base,meta[http-equiv],iframe,frame,object,embed').forEach(e=>e.remove());
+  for(const el of root.querySelectorAll('script')){
     if(el.type&&el.type!=='text/javascript'&&el.type!=='application/javascript')throw Error('Sidtest stöder klassiska scripts, inte '+el.type);
+    if(el.hasAttribute('async'))throw Error('Async-script stöds inte i detta sidtest.');
+    if(el.hasAttribute('src')&&el.hasAttribute('defer'))deferred.push(el);
     if(el.hasAttribute('src')){const f=resource(el.getAttribute('src'));el.removeAttribute('src');el.textContent=f.content;}
     el.removeAttribute('async');el.removeAttribute('defer');
     el.textContent=escapeScript(el.textContent);
   }
-  for(const el of doc.querySelectorAll('link')){
+  for(const el of root.querySelectorAll('link')){
     if(el.rel==='stylesheet'){const f=resource(el.getAttribute('href'));const style=doc.createElement('style');style.textContent=f.content;el.replaceWith(style);}else el.remove();
   }
   // Make forms, navigation and externally embedded media inert before insertion.
-  for(const el of doc.querySelectorAll('*'))for(const a of [...el.attributes]){
+  for(const el of root.querySelectorAll('*'))for(const a of [...el.attributes]){
     if(/^(?:href|action|formaction|srcset|ping|target)$/i.test(a.name))el.removeAttribute(a.name);
     if(a.name==='src'&&!/^data:image\//i.test(a.value))el.removeAttribute(a.name);
   }
@@ -28,14 +33,15 @@ export function buildTestPage(files,page,code,nonce) {
   const boot=doc.createElement('script');
   // Listener and channel are installed before application code, diagnostics stay local.
   boot.textContent=escapeScript(`(()=>{const send=parent.postMessage.bind(parent),token=${JSON.stringify(nonce)},errors=[],logs=[];let sent=false;const sleep=ms=>new Promise(r=>setTimeout(r,Math.min(1500,Math.max(0,Number(ms)||0))));window.addEventListener('error',e=>errors.push(String(e.message).slice(0,500)));window.addEventListener('unhandledrejection',e=>errors.push(String(e.reason).slice(0,500)));window.addEventListener('securitypolicyviolation',e=>errors.push('Blocked resource: '+e.violatedDirective));for(const k of ['log','info','warn','error'])console[k]=(...v)=>{if(logs.length<20)logs.push(v.map(x=>typeof x==='string'?x:JSON.stringify(x)).join(' ').slice(0,600));};const report=r=>{if(!sent){sent=true;send({nonce:token,result:{...r,logs,errors}},'*');}};window.addEventListener('load',async()=>{let __pageCount=0;try{await sleep(80);if(errors.length)throw Error(errors.join('; '));const run=async()=>{${ASSERT_HARNESS}\nconst wait=sleep;const key=async(k,ms=100)=>{const key=k==='Space'?' ':k,code=k==='Space'?'Space':k.length===1?'Key'+k.toUpperCase():k;const options={key,code,bubbles:true,cancelable:true};document.dispatchEvent(new KeyboardEvent('keydown',options));await sleep(ms);document.dispatchEvent(new KeyboardEvent('keyup',options));await sleep(50);};const click=s=>{const e=document.querySelector(s);assert(e,'Missing element: '+s);e.click();};const input=(s,value)=>{const e=document.querySelector(s);assert(e,'Missing input: '+s);e.value=value;e.dispatchEvent(new Event('input',{bubbles:true}));e.dispatchEvent(new Event('change',{bubbles:true}));};\n${code}\nreturn __jesp_assertions;};__pageCount=await run();if(errors.length)throw Error(errors.join('; '));report({passed:__pageCount>0,assertions:__pageCount,error:__pageCount?null:'No assertions'});}catch(e){report({passed:false,assertions:__pageCount,error:String(e.message||e).slice(0,1800)});}});setTimeout(()=>report({passed:false,assertions:0,error:'Sidtestets tidsgräns nåddes.'}),8000);})();`);
-  doc.head.prepend(boot);doc.head.prepend(csp);
+  for(const el of deferred)root.append(el);
+  doc.body.append(root);doc.head.prepend(boot);doc.head.prepend(csp);
   return {html:'<!doctype html>'+doc.documentElement.outerHTML,versions:[...used].map(([name,version])=>({name,version}))};
 }
 export async function executePageTest(files,args,signal) {
   if(signal?.aborted)throw signal.reason;
   const nonce=crypto.randomUUID?.()||Array.from(crypto.getRandomValues(new Uint8Array(16)),x=>x.toString(16).padStart(2,'0')).join('');const built=buildTestPage(files,args.page,args.code,nonce);
   return new Promise((resolve,reject)=>{
-    const frame=document.createElement('iframe');frame.sandbox='allow-scripts';frame.referrerPolicy='no-referrer';frame.title='Isolerat beteendetest';frame.style.cssText='position:fixed;left:-10000px;top:0;width:800px;height:600px;border:0';
+    const frame=document.createElement('iframe');frame.sandbox='allow-scripts';frame.referrerPolicy='no-referrer';frame.title='Isolerat beteendetest';frame.style.cssText='position:fixed;right:8px;bottom:8px;width:640px;max-width:85vw;height:360px;max-height:45vh;border:2px solid #667;z-index:1000;pointer-events:none;background:white';
     let done=false;
     const finish=(error,value)=>{if(done)return;done=true;clearTimeout(timer);window.removeEventListener('message',receive);signal?.removeEventListener('abort',stop);frame.remove();error?reject(error):resolve({...value,versions:built.versions,scope:'Browserram, lokala klassiska script, syntetisk input. Ingen prestanda- eller full säkerhetsgaranti.'});};
     const stop=()=>finish(signal.reason||new DOMException('Avbrutet','AbortError'));

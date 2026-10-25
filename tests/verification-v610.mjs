@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {artifactKey,normalizeSuite,executeSuite,verificationIssues,verificationRequired} from '../agents/verification.mjs';
+import {artifactKey,normalizeSuite,executeSuite,verificationIssues,verificationRequired,verifierInput} from '../agents/verification.mjs';
 import {Workspace,runAgent} from '../agents/core.mjs';
 const setup=()=>{const s=new Workspace({signal:new AbortController().signal,web:false,allowCode:true,execute:async()=>({passed:true,value:'{"assertions":3}'})});Object.assign(s,{backend:true,advanced:true,verifyBehavior:true,taskKind:'build',pendingIssues:[],reviews:[],trace:[]});s.write('logic.js','function f(x) {return x+1;}');return s;};
 const suite=(code='assert(true);assert(true);')=>({tests:[{id:'V1',kind:'js',requirement:'Positive behavior',files:['logic.js'],code},{id:'V2',kind:'js',requirement:'Combined boundary',files:['logic.js'],code}]});
@@ -22,3 +22,6 @@ test('runner cannot finish after independent failure',async()=>{
  const r=await runAgent({question:'Skapa logic.js',ai,space:s,signal:s.signal,maxSteps:3,review:false,advanced:true,mode:'build',verifyBehavior:true});
  assert.equal(r.unfinished,true);assert.ok(roles.includes('verifier'));assert.ok(r.issues.some(x=>x.startsWith('VERIFY:')));
 });
+
+test('unsupported module loader is rejected before freezing a suite',()=>{const s=setup();for(const code of ["const {f}=require('./logic.js');assert(f(1));", "import {f} from './logic.js';", "export const test=1;"]){assert.throws(()=>normalizeSuite(suite(code),s),/require|import|export/);}});
+test('independent expectation prompt cannot see implementation branches or prior outcomes',()=>{const s=setup();s.write('logic.js',"function choose(input){if(input.limit===0)return 999;} globalThis.reset=function(){};");const input=verifierInput(s);const raw=JSON.stringify(input);assert.ok(raw.includes('choose(input)'));assert.ok(raw.includes('reset'));assert.ok(!raw.includes('999'));assert.ok(!raw.includes('return'));});
