@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {artifactKey,normalizeSuite,executeSuite,verificationIssues,verificationRequired,verifierInput} from '../agents/verification.mjs';
+import {artifactKey,normalizeSuite,executeSuite,verificationIssues,verificationRequired,verifierInput,verifierDefinitions,unwrapVerifierDecision} from '../agents/verification.mjs';
 import {Workspace,runAgent} from '../agents/core.mjs';
 const setup=()=>{const s=new Workspace({signal:new AbortController().signal,web:false,allowCode:true,execute:async()=>({passed:true,value:'{"assertions":3}'})});Object.assign(s,{backend:true,advanced:true,verifyBehavior:true,taskKind:'build',pendingIssues:[],reviews:[],trace:[]});s.write('logic.js','function f(x) {return x+1;}');return s;};
 const suite=(code='assert(true);assert(true);')=>({tests:[{id:'V1',kind:'js',requirement:'Positive behavior',files:['logic.js'],code},{id:'V2',kind:'js',requirement:'Combined boundary',files:['logic.js'],code}]});
@@ -32,4 +32,22 @@ test('compile failure is sent for repair before any verifier is called',async()=
  const ai={provider:'backend',calls:0,lastModel:'mock',async ask(){this.calls++;roles.push(this.role);return {text:JSON.stringify({kind:'final',answer:'done'}),model:'mock'};}};
  const r=await runAgent({question:'Skapa logic.js och index.html',ai,space:s,signal:s.signal,maxSteps:2,review:false,advanced:true,mode:'build',verifyBehavior:true});
  assert.equal(r.unfinished,true);assert.ok(!roles.includes('verifier'));assert.ok(roles.every(x=>x==='repair'));assert.equal(s.audit.filter(x=>x.tool==='check_project').length,1);
+});
+
+test('typed submit_tests tool and repaired labels preserve executable code',()=>{
+ const schema=verifierDefinitions()[0].function;assert.equal(schema.name,'submit_tests');
+ const raw=suite();raw.tests[1].id='V1';
+ const unwrapped=unwrapVerifierDecision({kind:'actions',actions:[{tool:'submit_tests',args:raw}]});
+ assert.deepEqual(unwrapped.tests.map(t=>t.id),['V1','V2']);assert.equal(unwrapped.tests[1].code,raw.tests[1].code);
+ assert.equal(normalizeSuite(unwrapped,setup()).length,2);
+ assert.throws(()=>unwrapVerifierDecision({kind:'actions',actions:[{tool:'write_file',args:raw}]}));
+});
+test('verifier formatting failures recover at third real suite proposal',async()=>{
+ const s=setup();s.strategy={objective:'increment',criteria:[],deliverables:['logic.js'],choice:'function'};s.expectedNames.add('logic.js');let verifierCalls=0;
+ const ai={provider:'backend',calls:0,lastModel:'mock',async ask(_msg,_sig,_tok,tools){this.calls++;if(this.role==='verifier'){verifierCalls++;assert.equal(tools?.[0]?.function?.name,'submit_tests');return {text:JSON.stringify(verifierCalls<3?{tests:[suite().tests[0]]}:{kind:'actions',actions:[{tool:'submit_tests',args:suite()}]}),model:'mock'};}return {text:JSON.stringify({kind:'final',answer:'Done'}),model:'mock'};}};
+ const result=await runAgent({question:'Skapa logic.js',ai,space:s,signal:s.signal,maxSteps:6,review:false,advanced:true,mode:'build',verifyBehavior:true});
+ assert.equal(verifierCalls,3);assert.equal(s.verification?.passed,true);assert.equal(s.verification.executions,1);
+ assert.equal(s.audit.filter(e=>e.origin==='independent-verifier').length,2);
+ assert.equal(s.trace.filter(e=>e.type==='verification_error').length,2);
+ assert.ok(!result.issues.some(e=>e.startsWith('VERIFY:')));
 });
