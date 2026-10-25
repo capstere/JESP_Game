@@ -1,0 +1,24 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {artifactKey,normalizeSuite,executeSuite,verificationIssues,verificationRequired} from '../agents/verification.mjs';
+import {Workspace,runAgent} from '../agents/core.mjs';
+const setup=()=>{const s=new Workspace({signal:new AbortController().signal,web:false,allowCode:true,execute:async()=>({passed:true,value:'{"assertions":3}'})});Object.assign(s,{backend:true,advanced:true,verifyBehavior:true,taskKind:'build',pendingIssues:[],reviews:[],trace:[]});s.write('logic.js','function f(x) {return x+1;}');return s;};
+const suite=(code='assert(true);assert(true);')=>({tests:[{id:'V1',kind:'js',requirement:'Positive behavior',files:['logic.js'],code},{id:'V2',kind:'js',requirement:'Combined boundary',files:['logic.js'],code}]});
+test('execution consent is required',()=>{const s=setup();assert.ok(verificationRequired(s));s.allowCode=false;assert.equal(verificationRequired(s),false);});
+test('reject nonexistent or duplicate files',()=>{const s=setup();for(const files of [['missing.js'],['logic.js','logic.js'],[]]){const raw=suite();raw.tests[0].files=files;assert.throws(()=>normalizeSuite(raw,s));}});
+test('require 2-6 tests with distinct IDs',()=>{const s=setup();assert.throws(()=>normalizeSuite({tests:[]},s));const raw=suite();raw.tests[1].id='V1';assert.throws(()=>normalizeSuite(raw,s));});
+test('HTML requires browser behavior test',()=>{const s=setup();s.write('index.html','<p>App</p>');assert.throws(()=>normalizeSuite(suite(),s));const raw=suite();raw.tests[1]={id:'V2',kind:'page',page:'index.html',requirement:'Browser behavior',code:'assert(document.querySelector("p"));assert(true);'};assert.equal(normalizeSuite(raw,s).length,2);});
+test('unauthorized paths rejected',()=>{const s=setup();const raw=suite();raw.tests[0].files=['../logic.js'];assert.throws(()=>normalizeSuite(raw,s));});
+test('suite frozen and tests preserved after execution',async()=>{const s=setup();s.verification={suite:normalizeSuite(suite(),s)};const original=JSON.stringify(s.verification.suite);await executeSuite(s);assert.ok(s.verification.passed);assert.equal(JSON.stringify(s.verification.suite),original);assert.equal(s.audit[0].origin,'independent-verifier');assert.deepEqual(verificationIssues(s),[]);assert.throws(()=>s.verification.suite[0].code='');});
+test('file edits invalidate passing verification',async()=>{const s=setup();s.verification={suite:normalizeSuite(suite(),s)};await executeSuite(s);const key=artifactKey(s);s.write('logic.js','function f(x){return x+2;}');assert.notEqual(artifactKey(s),key);assert.ok(verificationIssues(s)[0].includes('aktuell'));});
+test('failed tests retain counterexample',async()=>{const s=setup();s.execute=async()=>({passed:false,error:'zero resources with free item'});s.verification={suite:normalizeSuite(suite(),s)};await executeSuite(s);assert.equal(s.verification.passed,false);assert.match(verificationIssues(s)[0],/zero resources/);});
+for(const count of [0,1])test(count+' assertions do not satisfy independent suite',async()=>{const s=setup();s.execute=async()=>({passed:true,value:JSON.stringify({assertions:count})});s.verification={suite:normalizeSuite(suite(),s)};await executeSuite(s);assert.equal(s.verification.passed,false);});
+test('abort propagates',async()=>{const s=setup();s.verification={suite:normalizeSuite(suite(),s)};const c=new AbortController();c.abort(new DOMException('Stopped','AbortError'));s.signal=c.signal;await assert.rejects(executeSuite(s),{name:'AbortError'});});
+test('repair reruns same suite against new versions',async()=>{const s=setup();let good=false;s.execute=async()=>good?{passed:true,value:'{"assertions":4}'}:{passed:false,error:'counterexample'};s.verification={suite:normalizeSuite(suite(),s)};await executeSuite(s);s.write('logic.js','function f(x){return x+1;}');good=true;await executeSuite(s);assert.ok(s.verification.passed);assert.equal(s.verification.executions,2);assert.deepEqual(s.audit.at(-1).data.versions,[{name:'logic.js',version:2}]);assert.deepEqual(verificationIssues(s),[]);});
+test('runner cannot finish after independent failure',async()=>{
+ const s=setup();s.strategy={objective:'increment',criteria:[],deliverables:['logic.js'],choice:'function'};s.expectedNames.add('logic.js');const roles=[];
+ const ai={provider:'backend',calls:0,lastModel:'mock',async ask(){this.calls++;roles.push(this.role);return {text:JSON.stringify(this.role==='verifier'?suite():{kind:'final',answer:'done'}),model:'mock'};}};
+ s.execute=async()=>({passed:false,error:'counterexample'});
+ const r=await runAgent({question:'Skapa logic.js',ai,space:s,signal:s.signal,maxSteps:3,review:false,advanced:true,mode:'build',verifyBehavior:true});
+ assert.equal(r.unfinished,true);assert.ok(roles.includes('verifier'));assert.ok(r.issues.some(x=>x.startsWith('VERIFY:')));
+});
