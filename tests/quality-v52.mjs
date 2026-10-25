@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {Workspace,runAgent,filename} from '../agents/core.mjs';
-import {taskKind,normalizeStrategy,qualityIssues,reviewCheckIssues,projectCheck} from '../agents/quality.mjs';
+import {taskKind,normalizeStrategy,qualityIssues,reviewCheckIssues,projectCheck,editingDefinitions} from '../agents/quality.mjs';
 const signal=()=>new AbortController().signal;
 const workspace=(question='Bygg ett spel')=>{const w=new Workspace({signal:signal(),question,web:false});w.advanced=true;w.taskKind=taskKind(question);return w;};
 const strategy={objective:'Körbar app',assumptions:['Webbläsare, inga paket'],alternatives:['Canvas: liten och fristående','WebGL: mer komplex'],choice:'Canvas för minsta körbara prototyp',deliverables:['index.html','logic.js'],criteria:['Innehåller körbar kod med användarinput','Logiken klarar kantfall'],steps:['Bygg logik','Bygg UI','Testa och rätta']};
@@ -51,4 +51,18 @@ test('explicit keyboard controls require case-insensitive event key matching',()
 test('browser dependent logic permitted unless explicitly required to be DOM-free',()=>{
  const w=workspace('Bygg en webbsida');w.write('logic.js','window.gameState={};');
  assert.deepEqual(projectCheck(w).issues,[]);
+});
+
+test('FPS scaffold creates three safe files only for FPS build task',async()=>{
+ const w=workspace('Bygg FPS. Skilj DOM-fri logik i logic.js och W/S, A/D input.');
+ assert.ok(editingDefinitions(w).some(t=>t.function.name==='scaffold_fps'));
+ const result=await w.tool('scaffold_fps',{});
+ assert.equal(result.template,'audited-fps-v1');
+ assert.deepEqual(result.files.map(f=>f.name).sort(),['game.js','index.html','logic.js']);
+ assert.equal(projectCheck(w).passed,true,projectCheck(w).issues.join('; '));
+ assert.match(w.files.get('logic.js').content,/targetVisible/);
+ await assert.rejects(w.tool('scaffold_fps',{}),/får inte ersätta/);
+ const other=workspace('Bygg en hemsida');
+ assert.equal(editingDefinitions(other).some(t=>t.function.name==='scaffold_fps'),false);
+ await assert.rejects(other.tool('scaffold_fps',{}),/enbart/);
 });
