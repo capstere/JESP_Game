@@ -2,7 +2,7 @@ import {executePageTest} from './page-test.mjs?v=6.1.0';
 import {ASSERT_HARNESS} from './test-harness.mjs?v=6.1.0';
 import {failureDiagnostics,crossScriptSyntax} from './diagnostics.mjs?v=6.1.0';
 import {Workspace as BaseWorkspace,filename,check} from './runtime.mjs?v=5.1.1';
-import {projectCheck} from './quality.mjs?v=6.1.0';
+import {projectCheck} from './quality.mjs?v=6.2.0';
 import {fpsStarter} from './game-scaffold.mjs?v=6.1.0';
 export class Workspace extends BaseWorkspace {
   async tool(name,args={}) {

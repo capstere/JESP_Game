@@ -1,7 +1,7 @@
 import {FINAL_REVIEW_PROMPT,CALCULATION_PROMPT} from './final-review.mjs?v=6.1.0';
 import {enforceUserContract} from './requirements.mjs?v=6.2.0';
-export * from './goal-contract.mjs?v=5.2.0';
-import {qualityIssues as baseQuality,reviewCheckIssues as baseReview,taskKind as baseTaskKind,advancedPrompt as basePrompt,normalizeStrategy as baseStrategy,strategyDefinitions as baseStrategyDefinitions} from './goal-contract.mjs?v=5.2.0';
+export * from './goal-contract.mjs?v=6.2.0';
+import {qualityIssues as baseQuality,reviewCheckIssues as baseReview,taskKind as baseTaskKind,advancedPrompt as basePrompt,normalizeStrategy as baseStrategy,strategyDefinitions as baseStrategyDefinitions} from './goal-contract.mjs?v=6.2.0';
 export function taskKind(question,mode='auto') {
  if(mode!=='auto')return baseTaskKind(question,mode);
  const q=String(question).toLowerCase();
