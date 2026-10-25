@@ -42,7 +42,7 @@ Returnera ENDAST JSON, högst 500 ord:
 {"verdict":"pass" eller "revise","answer":"kort bedömning","issues":["konkret brist och rättning"],"checks":[{"id":"C1","status":"pass" eller "fail" eller "unknown","evidence":["file:namn.js@v1" eller "tool:T3" eller "source:S1"],"finding":"vad i underlaget stödjer eller motsäger kravet"}]}.
 Samtliga C-kriterier måste bedömas. Varje pass behöver en verklig evidensreferens och en saklig förklaring. Referensen visar var underlaget finns, inte automatiskt att det är sant. Unknown/fail kräver revise. Skilj testad funktion från enbart statisk kodgranskning. Du kan inte själv ändra filer: ange rättningen till nästa arbetsrunda.`;
   return common+`
-Följ det valda angreppssättet och arbeta mot acceptanskriterierna. Börja med den minsta användbara leveransen, inte en roadmap. Gör konkreta teknikval, pröva svaga antaganden och använd faktiska verktygsresultat. Vid kritik: RÄTTA FILERNA, inte bara slutsvaret.
+Följ det valda angreppssättet och arbeta mot acceptanskriterierna. Börja med den minsta användbara leveransen, inte en roadmap. För webbaserade FPS-uppdrag finns verktyget scaffold_fps. Använd det för en helt TOM arbetsyta för en fungerande grund med tre filer, testa sedan de aktuella filerna och gör endast nödvändiga anpassningar. Startmotorn är en byggmall och inte modellgenererad kod. Gör konkreta teknikval, pröva svaga antaganden och använd faktiska verktygsresultat. Vid kritik: RÄTTA FILERNA, inte bara slutsvaret.
 write_file skapar en komplett fil. edit_file ändrar en exakt unik text med expected_version. append_file lägger till nästa avsnitt med expected_version; delvis uppbyggda filer är INTE färdiga leveranser. read_file kan läsa start_line/end_line. list_files visar versioner. check_project kontrollerar lokala referenser/struktur; det är inte ett funktionstest.
 Det finns INGEN 150-ordsgräns för en leverans. Vid snävt svarstak: skriv cirka 1500–3000 tecken PER VERKTYGSANROP och bygg vidare med append_file eller edit_file. Skicka alltid komplett JSON. Undvik att skriva om hela filer i onödan.
 För tester: test_js kör vanlig JavaScript utan DOM/import/nätverk. Använd {name:"logik.js",code:"assert(..., 'beskrivning')"}. Flera filer kan anges i files. Inbyggd assert räknar faktiskt körda kontroller. Testa normalt fall, kantfall och motexempel. Funktioner som beror på DOM kan inte testas här; ange begränsningen. Tester är avstängda utan användarens godkännande.
@@ -51,6 +51,8 @@ Använd erbjudna funktioner. Alternativt ENDAST JSON {"kind":"actions","actions"
 }
 export function editingDefinitions(space) {
   return [
+    ...(space.taskKind==='build'&&/(?:\bfps\b|first[- ]person|förstaperson)/i.test(space.question||'')
+      ?[fn('scaffold_fps','Create a small audited FPS web starter: index.html, DOM-free logic.js, game.js, controls W/S/A/D, shootable target, score and R reset. Use it FIRST only while the workspace has no files, then run code and browser tests. Existing files are NEVER replaced.',{},[])]:[]),
     fn('list_files','List workspace file names, versions and sizes.',{},[]),
     fn('append_file','Append a bounded chunk to an existing file. Requires the CURRENT version; stale calls fail.',{name:text,expected_version:{type:'integer'},content:text},['name','expected_version','content']),
     fn('edit_file','Replace exactly one matching substring. Read first. Requires CURRENT version. No regular expressions.',{name:text,expected_version:{type:'integer'},find:text,replace:text},['name','expected_version','find','replace']),
