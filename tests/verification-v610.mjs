@@ -51,3 +51,43 @@ test('verifier formatting failures recover at third real suite proposal',async()
  assert.equal(s.trace.filter(e=>e.type==='verification_error').length,2);
  assert.ok(!result.issues.some(e=>e.startsWith('VERIFY:')));
 });
+
+
+test('trusted property oracle precedes stochastic verifier and preserves counterexample through real repair',async()=>{
+ const question='Skapa solver.js och resultat.json: selectProjects(projects, budget). A kostar 6 och ger 30 nytta, B kostar 3 och ger 14, C kostar 4 och ger 16, D kostar 2 och ger 9. Budgeten är 10.';
+ const signal=new AbortController().signal;
+ const s=new Workspace({signal,question,web:false,allowCode:true,execute:async source=>{try{return {passed:true,value:new Function(source)()};}catch(e){return {passed:false,error:String(e.message||e)};}}});
+ const source=[
+ 'function selectProjects(projects,budget){',
+ 'if(!Number.isFinite(budget)||budget<0)throw Error("invalid budget");',
+ 'if(budget===0)return {selected:[],total_cost:0,total_benefit:0};',
+ 'let best={selected:[],total_cost:0,total_benefit:0};',
+ 'for(let mask=0;mask<(1<<projects.length);mask++){let cost=0,benefit=0,selected=[];for(let i=0;i<projects.length;i++){if(mask&(1<<i)){cost+=projects[i].cost;benefit+=projects[i].benefit;selected.push(projects[i].id);}}if(cost<=budget&&benefit>best.total_benefit)best={selected,total_cost:cost,total_benefit:benefit};}return best;}'
+ ].join('\n');
+ s.write('solver.js',source);
+ s.write('resultat.json',JSON.stringify({optimal:{selected:['A','C'],total_cost:10,total_benefit:46},baseline:{selected:['A','B'],total_cost:9,total_benefit:44}}));
+ s.strategy={objective:'Choose optimal project combination',criteria:[],deliverables:['solver.js','resultat.json'],choice:'enumerate subsets'};
+ s.expectedNames.add('solver.js');s.expectedNames.add('resultat.json');
+ const roles=[];
+ const ai={provider:'backend',calls:0,lastModel:'mock',async ask(){this.calls++;roles.push(this.role);return {text:JSON.stringify({kind:'actions',actions:[{tool:'edit_file',args:{name:'solver.js',expected_version:1,find:'if(budget===0)return {selected:[],total_cost:0,total_benefit:0};',replace:''}}]}),model:'mock'};}};
+ await runAgent({question,ai,space:s,signal,maxSteps:3,review:false,advanced:true,mode:'build',verifyBehavior:true});
+ assert.equal(s.verification?.trusted,true);
+ assert.equal(s.verification?.passed,true,JSON.stringify(s.verification?.results));
+ assert.equal(s.verification?.executions,2);
+ assert.ok(s.audit.some(e=>e.testId==='V8'&&e.data?.passed===false));
+ assert.ok(s.audit.some(e=>e.testId==='V8'&&e.data?.passed===true));
+ assert.ok(!roles.includes('verifier'),'Known reference tasks must not depend on AI-authored test fixtures');
+ assert.equal(s.files.get('solver.js').version,2);
+});
+test('trusted FPS UI contract targets actual initial coordinates and user input, not (0,0)',async()=>{
+ const {fpsPropertyTest}=await import('../agents/oracle.mjs');
+ const q='Bygg en FPS-prototyp med window.gameState och window.resetGame. W/S flytta, A/D rotera, Space skjuta målet direkt från start, R återställa.';
+ const s=setup();s.question=q;s.write('index.html','<!doctype html><canvas></canvas>');
+ const t=fpsPropertyTest(s);
+ assert.equal(t.kind,'page');assert.equal(t.page,'index.html');assert.equal(t.id,'V9');
+ assert.match(t.code,/Math\.hypot\(window\.gameState\.x-start\.x/);
+ assert.match(t.code,/key\('Space'/);
+ assert.match(t.code,/colors\.size>=3/);
+ assert.doesNotMatch(t.code,/gameState\.x===0/);
+ assert.equal(fpsPropertyTest({...s,question:'Skapa en FPS-plan'}),null);
+});
