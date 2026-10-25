@@ -66,3 +66,11 @@ test('FPS scaffold creates three safe files only for FPS build task',async()=>{
  assert.equal(editingDefinitions(other).some(t=>t.function.name==='scaffold_fps'),false);
  await assert.rejects(other.tool('scaffold_fps',{}),/enbart/);
 });
+
+test('FPS project preflight rejects reset teleportation away from the initial target',()=>{
+ const w=workspace('Bygg FPS med window.gameState och window.resetGame samt synligt mål rakt fram från start.');
+ w.write('logic.js','const START={x:2.5,y:2.5,angle:0};const gameState={x:START.x,y:START.y};function resetGame(){gameState.x=0;gameState.y=0;}');
+ assert.match(projectCheck(w).issues.join(' '),/START.x/);
+ w.write('logic.js','const START={x:2.5,y:2.5,angle:0};const gameState={x:START.x,y:START.y};function resetGame(){gameState.x=START.x;gameState.y=START.y;}');
+ assert.deepEqual(projectCheck(w).issues,[]);
+});
