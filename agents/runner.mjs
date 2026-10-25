@@ -1,4 +1,4 @@
-import {artifactKey,verificationRequired,verificationIssues,verifierPrompt,verifierInput,verifierDefinitions,unwrapVerifierDecision,normalizeSuite,checkSuiteAgainstOracle,projectPropertyTest,executeSuite} from './verification.mjs?v=6.1.0';
+import {artifactKey,verificationRequired,verificationIssues,verifierPrompt,verifierInput,verifierDefinitions,unwrapVerifierDecision,normalizeSuite,checkSuiteAgainstOracle,projectPropertyTest,fpsPropertyTest,executeSuite} from './verification.mjs?v=6.1.0';
 import {synthesisReady,SYNTHESIS_INSTRUCTION} from './controller.mjs?v=6.1.0';
 import {normalizeToolArguments} from './arguments.mjs?v=6.1.0';
 import {finalAnswerIssues} from './final-review.mjs?v=6.1.0';
@@ -133,6 +133,16 @@ export async function runAgentImpl({question,ai,space,signal,maxSteps=12,review=
       if(canVerify&&space.verification?.suite&&space.verification.key!==artifactKey(space)){
         emit('stage',{stage:'review',step,maxSteps});
         await executeSuite(space,emit);record(space,emit,'verification_result',{passed:space.verification.passed,results:space.verification.results});
+        tail=[];continue;
+      }
+      // Domain-specific deterministic oracles execute before stochastic test authors.
+      // The exact same acceptance criteria are rerun after each actual file edit.
+      const trustedProperty=canVerify&&!space.verification?.suite?(projectPropertyTest(space)||fpsPropertyTest(space)):null;
+      if(trustedProperty){
+        space.verification={suite:Object.freeze([trustedProperty]),key:null,passed:false,results:[],executions:0,model:'deterministic-reference',trusted:true};
+        record(space,emit,'verification_suite',{model:'deterministic-reference',tests:space.verification.suite,kind:'trusted-oracle'});
+        await executeSuite(space,emit);
+        record(space,emit,'verification_result',{passed:space.verification.passed,results:space.verification.results,kind:'trusted-oracle'});
         tail=[];continue;
       }
       const verifying=canVerify&&!space.verification?.suite;
