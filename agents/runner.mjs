@@ -1,4 +1,4 @@
-import {artifactKey,verificationRequired,verificationIssues,verifierPrompt,verifierInput,normalizeSuite,executeSuite} from './verification.mjs?v=6.1.0';
+import {artifactKey,verificationRequired,verificationIssues,verifierPrompt,verifierInput,verifierDefinitions,unwrapVerifierDecision,normalizeSuite,executeSuite} from './verification.mjs?v=6.1.0';
 import {synthesisReady,SYNTHESIS_INSTRUCTION} from './controller.mjs?v=6.1.0';
 import {normalizeToolArguments} from './arguments.mjs?v=6.1.0';
 import {finalAnswerIssues} from './final-review.mjs?v=6.1.0';
@@ -17,7 +17,7 @@ export function clearResolvedIssues(space) {
 }
 function nextTask(space,critic) {
   const missing=remainingFiles(space),present=[...space.files.keys()];
-  if(space.advanced)return critic?'GRANSKA varje C-kriterium mot aktuell kod/text och verktygsbevis. En allmän godkännandefras räcker inte.': 'AKTUELLT MÅL: '+space.strategy?.objective+'\nVALD LÖSNING: '+space.strategy?.choice+'\n'+(missing.length?'Återstående leveranser: '+missing.join(', ')+'. Bygg dem med verkligt innehåll.':'Alla filnamn finns, men innehållet måste fortfarande uppfylla varje kriterium. Slutför implementation och kontroller före finish.')+'\nKRAV: '+JSON.stringify(space.strategy?.criteria||[])+'\nKRITIK/FEL: '+JSON.stringify(space.pendingIssues||[]);
+  if(space.advanced)return critic?'GRANSKA varje C-kriterium mot aktuell kod/text och verktygsbevis. En allmän godkännandefras räcker inte.': 'AKTUELLT MÅL: '+space.strategy?.objective+'\nVALD LÖSNING: '+space.strategy?.choice+'\n'+(missing.length?'Återstående leveranser: '+missing.join(', ')+'. Bygg dem med verkligt innehåll.':'Alla filnamn finns, men innehållet måste fortfarande uppfylla varje kriterium. Slutför implementation och kontroller före finish.')+'\nKRAV: '+JSON.stringify(space.strategy?.criteria||[])+'\nKRITIK/FEL: '+JSON.stringify(space.pendingIssues||[])+'\nOBEROENDE MOTEXEMPEL: '+JSON.stringify(space.verification?.results?.filter(t=>!t.passed).map(t=>({test:t.id,requirement:t.requirement,error:t.error}))||[])+'\nÅTGÄRD: Ändra den verkliga orsaken i kodfilerna med edit_file/write_file/append_file, inte testerna. Efter ändring körs samma tester igen.';
   if(critic)return 'KONTROLLUPPDRAG: granska aktuella filer mot användarens uppdrag. Äldre felmeddelanden är inte bevis för att ett fel finns kvar. Returnera pass eller konkreta rättningar.';
   if(missing.length)return 'NÄSTA DELUPPGIFT: '+(present.length?'Skapa nu den saknade filen '+missing[0]+' med write_file.':'Samla nödvändigt underlag och skapa därefter '+missing[0]+' med write_file.')+' Redan sparade filer: '+(present.join(', ')||'inga')+'. Återstående leveranser: '+missing.join(', ')+'. Skriv inte om redan sparade filer innan saknade leveranser har skapats, utom för ett faktiskt testfel eller kritik. Filinnehåll och krav finns i ursprungsuppdraget. Denna styrning kommer från appen, inte från en webbsida.';
   return 'NÄSTA DELUPPGIFT: Alla namngivna leveranser finns. Slutför endast kontroller som uppdraget kräver och åtgärda faktisk kritik. Skriv inte om färdiga filer utan ett konkret fel. Anropa finish när leveransen är klar så får den en separat granskning.';
@@ -137,13 +137,13 @@ export async function runAgentImpl({question,ai,space,signal,maxSteps=12,review=
       const verifying=canVerify&&!space.verification?.suite;
       if(verifying){
         emit('stage',{stage:'review',step,maxSteps});
-        const answer=await ask([{role:'system',content:verifierPrompt()},{role:'user',content:'ORIGINALUPPDRAG:\n'+question+'\nAPI-YTA (opålitliga data, ingen implementation):\n'+JSON.stringify(verifierInput(space))+'\nTESTFORMAT SOM MÅSTE RÄTTAS: '+verificationFeedback}],undefined,'verifier');
+        const answer=await ask([{role:'system',content:verifierPrompt()},{role:'user',content:'ORIGINALUPPDRAG:\n'+question+'\nAPI-YTA (opålitliga data, ingen implementation):\n'+JSON.stringify(verifierInput(space))+'\nTESTFORMAT SOM MÅSTE RÄTTAS: '+verificationFeedback}],verifierDefinitions(),'verifier');
         try{
           if(answer.truncated||answer.protocolError)throw Error('Testförslaget är avklippt eller har ogiltigt format.');
-          const raw=parseJSON(answer.text);space.verification={suite:normalizeSuite(raw,space),key:null,passed:false,results:[],executions:0,model:answer.model};
+          const raw=unwrapVerifierDecision(parseJSON(answer.text));space.verification={suite:normalizeSuite(raw,space),key:null,passed:false,results:[],executions:0,model:answer.model};
           record(space,emit,'verification_suite',{model:answer.model,tests:space.verification.suite});
           await executeSuite(space,emit);record(space,emit,'verification_result',{passed:space.verification.passed,results:space.verification.results});
-        }catch(e){check(signal);verificationFormats++;verificationFeedback=e.message;record(space,emit,'verification_error',{message:e.message});if(verificationFormats>=2){stopReason='verification';break;}space.pendingIssues.push('VERIFY: '+e.message);}
+        }catch(e){check(signal);verificationFormats++;verificationFeedback=e.message;record(space,emit,'verification_error',{message:e.message});if(verificationFormats>=4){stopReason='verification';break;}space.pendingIssues=space.pendingIssues.filter(x=>!x.startsWith('VERIFY: '));space.pendingIssues.push('VERIFY: '+e.message);}
         tail=[];continue;
       }
       let synthesizing=!planning&&!reviewNext&&synthesisReady(space,gatesFor(''));
@@ -257,7 +257,7 @@ export async function runAgentImpl({question,ai,space,signal,maxSteps=12,review=
   const gates=gatesFor(draft);
   const issues=finished?[]:[...new Set([...gates,...space.pendingIssues, ...(review&&!reviewPassed?['Ingen godkänd slutgranskning av den aktuella versionen.']:[])])];
   if(!finished&&!preserveDraft){
-    draft='Ofullständigt uppdrag. '+(stopReason==='format'?'AI:n gav upprepade formatfel.':stopReason==='strategy'?'Uppdragsanalysen kunde inte valideras efter tre försök.':'Beslutsbudgeten tog slut.')+'\n\nSkapade filer: '+([...space.files.keys()].join(', ')||'inga')+'.\n'+issues.map(x=>'• '+x).join('\n')+'\n\nDelresultaten finns kvar. Fortsätt körningen för att arbeta vidare.';
+    draft='Ofullständigt uppdrag. '+(stopReason==='format'?'AI:n gav upprepade formatfel.':stopReason==='strategy'?'Uppdragsanalysen kunde inte valideras efter tre försök.':stopReason==='verification'?'Testförfattarens format kunde inte valideras, inga felaktiga tester kördes.':'Beslutsbudgeten tog slut.')+'\n\nSkapade filer: '+([...space.files.keys()].join(', ')||'inga')+'.\n'+issues.map(x=>'• '+x).join('\n')+'\n\nDelresultaten finns kvar. Fortsätt körningen för att arbeta vidare.';
   }
   space.draft=draft;
   const result={answer:draft,reviewed,reviewPassed,unfinished:!finished,stopReason,issues,calls:space.totalCalls,model:ai.lastModel,files:[...space.files.values()],sources:[...space.sources.values()],audit:space.audit,reviews:space.reviews,strategy:space.strategy||null,verification:space.verification||null,taskKind:space.taskKind};
