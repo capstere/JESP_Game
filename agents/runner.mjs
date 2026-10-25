@@ -3,7 +3,7 @@ import {synthesisReady,SYNTHESIS_INSTRUCTION} from './controller.mjs?v=6.1.0';
 import {normalizeToolArguments} from './arguments.mjs?v=6.1.0';
 import {finalAnswerIssues} from './final-review.mjs?v=6.1.0';
 import {unsupportedReviewerIssue} from './requirements.mjs?v=6.2.0';
-import {backendToolDefinitions,taskKind,normalizeStrategy,strategyDefinitions,advancedPrompt,editingDefinitions,qualityIssues,reviewCheckIssues} from './quality.mjs?v=6.1.0';
+import {backendToolDefinitions,taskKind,normalizeStrategy,strategyDefinitions,advancedPrompt,editingDefinitions,qualityIssues,reviewCheckIssues} from './quality.mjs?v=6.2.0';
 import {toolDefinitions,reviewDefinitions} from './protocol.mjs?v=5.1.1';
 import {snapshot,completionIssues,requestedFiles} from './evidence.mjs?v=6.1.0';
 
@@ -58,7 +58,7 @@ async function toolAction(space,action,emit,check,signal,origin='agent') {
     const failedCheck=space.audit.some(e=>['inspect_file','test_js'].includes(e.tool) && (e.args?.name===args.name||e.data?.file===args.name) && (!e.ok||e.data?.passed===false));
     const repairRequested=space.reviews.at(-1)?.verdict==='revise';
     if(!space.advanced && tool==='write_file' && space.files.has(args.name) && missing.length && !failedCheck && !repairRequested)throw new Error('Filen '+args.name+' finns redan. Nästa obligatoriska leverans är '+missing[0]+'. Skapa de saknade filerna innan du skriver om en befintlig fil.');
-    const protectExisting=(origin==='agent'&&['write_file','append_file','edit_file'].includes(tool)&&space.verification?.passed===true&&space.verification.key===artifactKey(space));
+    const protectExisting=(origin==='agent'&&['write_file','append_file','edit_file','patch_files'].includes(tool)&&space.verification?.passed===true&&space.verification.key===artifactKey(space));
     const previousFiles=protectExisting?new Map(space.files):null;
     result={ok:true,data:await space.tool(tool,args)};
     if(protectExisting){
