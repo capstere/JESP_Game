@@ -1,5 +1,5 @@
-import {backendModels,DEFAULT_WORKER,DEFAULT_CRITIC} from './backend.mjs?v=6.2.0';
-import {AI,Workspace,runAgent,freeModels,VERSION,check} from './core.mjs?v=6.2.0';
+import {backendModels,DEFAULT_WORKER,DEFAULT_CRITIC} from './backend.mjs?v=6.3.0';
+import {AI,Workspace,runAgent,freeModels,VERSION,check} from './core.mjs?v=6.3.0';
 import {executeJS} from './sandbox.mjs?v=5.2.0';
 import {zipFiles} from './zip.mjs';
 import {localAnswer,unloadLocal} from './local.mjs';
@@ -9,7 +9,7 @@ let busy=false,controller=null,space=null,result=null,question='',settings={};
 const node=(tag,text,cls)=>{const e=document.createElement(tag);if(text!==undefined)e.textContent=text;if(cls)e.className=cls;return e;};
 function status(text,cls=''){ $('status').textContent=text;$('status').className=cls; }
 function controls(){
- for(const id of ['run','test','checkKilo','refreshBackend','workerModel','criticModel','provider','model','steps','advanced','taskMode','reasoning','web','review','code','prompt','downloadConsent'])$(id).disabled=busy;
+ for(const id of ['run','test','checkKilo','refreshBackend','workerModel','criticModel','provider','model','steps','liveStream','advanced','taskMode','reasoning','web','review','code','prompt','downloadConsent'])$(id).disabled=busy;
  for(const e of document.querySelectorAll('[data-example]'))e.disabled=busy;
  if($('provider').value==='backend'&&!backendReady){$('run').disabled=true;$('test').disabled=true;}
  $('cancel').disabled=!busy||!controller||controller.signal.aborted;
@@ -33,6 +33,23 @@ function files(){
   const button=node('button','Ladda ner fil');button.onclick=()=>download(file.name,file.content);row.append(detail,button);$('files').append(row);
  }
 }
+
+const roleLabel={architect:'Arkitekt',work:'Arbetsagent',repair:'Felsökare',verifier:'Testförfattare',critic:'Granskare',synthesis:'Slutsvar'};
+function appendLiveEvent(message,kind='work'){
+ const panel=$('liveTimeline');if(!panel)return;
+ const li=node('li',new Date().toLocaleTimeString('sv-SE',{hour:'2-digit',minute:'2-digit',second:'2-digit'})+' · '+String(message).slice(0,260),'live-'+kind);
+ panel.append(li);while(panel.children.length>70)panel.firstElementChild.remove();
+ panel.scrollTop=panel.scrollHeight;
+}
+function liveToken(token,{role,model}={}){
+ const pre=$('livePreview');if(!pre||!token)return;
+ if(role&&pre.dataset.role&&role!==pre.dataset.role){pre.textContent='';}
+ if(role)pre.dataset.role=role;
+ pre.textContent=(pre.textContent+String(token)).slice(-6000);
+ pre.scrollTop=pre.scrollHeight;
+ if(model)$('liveRole').textContent=(roleLabel[role]||role||'AI')+' · '+model;
+ $('livePhase').textContent='Mottar live-text från AI-modellen. Utkastet är inte verifierat.';
+}
 function emit(type,data){
  if(type==='stage'){for(const el of document.querySelectorAll('[data-stage]'))el.classList.toggle('active',el.dataset.stage===data.stage);if(data.step)status(`Agentbeslut ${data.step}/${data.maxSteps}…`);else status('Separat granskning…');}
  if(type==='contract'){
@@ -46,13 +63,32 @@ function emit(type,data){
  if(type==='warning')log(data,undefined,'warning');
  if(type==='action'){const args=data.args||{};const label=args.query||args.url||args.name||args.expression||'';log('Start: '+data.tool+(label?' · '+String(label).slice(0,180):''));}
  if(type==='observation')log((data.ok?'OK: ':'Fel: ')+data.tool,data,data.ok?'':'error');
+ if(type==='observation')appendLiveEvent((data.ok?'Verktyg klart: ':'Verktyg misslyckades: ')+data.tool,data.ok?'work':'error');
  if(type==='file'){files();controls();}
  if(type==='source'){let div=[...$('sources').children].find(e=>e.dataset.sourceId===data.id);if(!div){div=node('div',undefined,'source');div.dataset.sourceId=data.id;$('sources').append(div);}const a=node('a',`[${data.id}] ${data.title}`);a.href=data.url;a.target='_blank';a.rel='noopener noreferrer';const labels={read:'Hämtad text',found:'Sökträff',thin:'Otillräcklig text'};div.replaceChildren(a,node('small',`${labels[data.status]||'Hittad länk'} · ${new URL(data.url).hostname}`));$('sourceCount').textContent=space.sources.size;}
  if(type==='draft'){$('answer').textContent=data;$('answerNote').textContent='Utkast. Granskning är inte slutförd.';controls();}
+ if(type==='review')appendLiveEvent(data.verdict==='pass'?'Granskaren godkände aktuell version':'Granskaren begärde konkreta rättningar',data.verdict==='pass'?'review':'error');
  if(type==='review'){$('issues').textContent=data.issues.map(String).join('\n');log(data.verdict==='pass'&&!data.issues.length?'AI-kravgranskning utan kvarvarande invändningar':'Kritik → rättningsrunda',data);}
+ if(type==='trace'){
+  if(data.type==='ai_start'){
+   const role=roleLabel[data.role]||data.role||'AI';
+   $('liveRole').textContent=role;
+   $('livePreview').textContent='';$('livePreview').dataset.role=data.role||'';
+   $('livePhase').textContent='AI-anrop pågår: '+role+(settings.liveStream?' · SSE-streaming aktiverad':' · väntar på fullständigt svar');
+   appendLiveEvent(role+' påbörjade ett modell-anrop',data.role==='critic'?'review':'work');
+  }
+  if(data.type==='ai_end'){
+   $('livePhase').textContent='Modellsvaret mottaget. Nästa steg: validera verktyg och resultat.';
+   appendLiveEvent((roleLabel[data.role]||data.role||'AI')+' svarade med '+String(data.model||'modell')+(data.truncated?' (avklippt)':''),data.truncated?'error':'work');
+  }
+  if(data.type==='ai_error'||data.type==='run_stopped'){
+   $('livePhase').textContent='AI-anropet avbröts eller misslyckades. Ett ofullständigt svar körs inte.';
+   appendLiveEvent(String(data.message||data.error?.message||'AI-fel'),'error');
+  }
+ }
  if(type==='trace')controls();
  if(type==='trace'&&['ai_start','ai_end','ai_error','finish_blocked','run_stopped','strategy','strategy_error'].includes(data.type))log('Körspår: '+data.type,data);
- if(type==='done'){result=data;$('answer').textContent=data.answer;$('answerNote').textContent=(data.unfinished?'Ofullständigt uppdrag. ':'')+(data.reviewPassed?'Separat AI-granskning godkände aktuell leverans; ingen korrekthetsgaranti.':data.reviewed?'Granskning utförd, men slutleveransen är inte godkänd.':'Ingen godkänd separat AI-granskning.');$('issues').textContent=(data.issues||[]).join('\n');}
+ if(type==='done'){appendLiveEvent(data.unfinished?'Körningen är ofullständig':'Körningen har avslutats',data.unfinished?'error':'review');$('livePhase').textContent=data.unfinished?'Ofullständig agentkörning. Delresultaten finns kvar.':'Agentkörningen avslutad. Kontrollera granskning och filer.';result=data;$('answer').textContent=data.answer;$('answerNote').textContent=(data.unfinished?'Ofullständigt uppdrag. ':'')+(data.reviewPassed?'Separat AI-granskning godkände aktuell leverans; ingen korrekthetsgaranti.':data.reviewed?'Granskning utförd, men slutleveransen är inte godkänd.':'Ingen godkänd separat AI-granskning.');$('issues').textContent=(data.issues||[]).join('\n');}
 }
 function explain(e){
  if(e.name==='AbortError')return 'Avbrutet. Skapade filer och mottagna resultat finns kvar.';
@@ -71,12 +107,12 @@ async function run(test=false,resume=false){
  if($('provider').value==='local'&&!$('downloadConsent').checked){status('Godkänn modellnedladdningen i inställningarna först.','error');$('settings').open=true;return;}
  if(resume&&(settings.advanced!==$('advanced').checked||settings.mode!==$('taskMode').value)){status('Behåll samma arbetssätt och uppdragstyp när du fortsätter, eller starta ett nytt uppdrag.','error');return;}
  question=input;controller=new AbortController();const signal=controller.signal;busy=true;result=null;
- settings={workerModel:$('workerModel').value,criticModel:$('criticModel').value,advanced:$('advanced').checked,mode:$('taskMode').value,provider:$('provider').value,model:$('model').value,reasoning:$('reasoning').value,maxSteps:Number($('steps').value),web:$('web').checked,review:$('review').checked,allowCode:$('code').checked};
+ settings={workerModel:$('workerModel').value,criticModel:$('criticModel').value,advanced:$('advanced').checked,mode:$('taskMode').value,provider:$('provider').value,model:$('model').value,reasoning:$('reasoning').value,maxSteps:Number($('steps').value),web:$('web').checked,review:$('review').checked,allowCode:$('code').checked,liveStream:$('provider').value==='backend'&&$('liveStream').checked};
  if(resume){space.signal=signal;space.web=settings.web;space.allowCode=settings.allowCode;space.offline.clear();space.lastError=null;}else space=new Workspace({signal,emit,web:settings.web,allowCode:settings.allowCode,execute:executeJS,question});
- $('workspace').hidden=false;if(!resume){for(const id of ['answer','issues','log','files','sources','plan','contract'])$(id).replaceChildren();$('fileCount').textContent=$('sourceCount').textContent='0';$('answerNote').textContent='Arbetar. Verktygsresultat visas i loggen.';}controls();
+ $('workspace').hidden=false;if(!resume){for(const id of ['answer','issues','log','files','sources','plan','contract','liveTimeline','livePreview'])$(id).replaceChildren();$('liveRole').textContent='Väntar på modell';$('livePhase').textContent=settings.liveStream?'SSE-tokenströmning aktiverad. Väntar på första AI-svaret.':'Verktyg och agentroller visas live. SSE-tokenströmning är av.';$('fileCount').textContent=$('sourceCount').textContent='0';$('answerNote').textContent='Arbetar. Verktygsresultat visas i loggen.';}controls();
  let lastStatusKey='';
  const transportStatus=text=>{status(text);const key=text.replace(/\d+/g,'#');if(key!==lastStatusKey){space.trace.push({time:new Date().toISOString(),type:'status',message:text});lastStatusKey=key;}};
- const ai=new AI({workerModel:settings.workerModel,criticModel:settings.criticModel,provider:$('provider').value,model:$('model').value,onStatus:transportStatus,local:localAnswer,reasoning:settings.reasoning});
+ const ai=new AI({workerModel:settings.workerModel,criticModel:settings.criticModel,provider:$('provider').value,model:$('model').value,onStatus:transportStatus,local:localAnswer,reasoning:settings.reasoning,liveStream:settings.liveStream,onToken:liveToken});
  try{
   if(test){const answer=await ai.ask([{role:'user',content:input}],signal,64);check(signal);space.totalCalls=ai.calls;space.trace.push({type:'connection_test',model:answer.model,calls:ai.calls,requestedReasoning:ai.reasoning});emit('done',{answer:answer.text,reviewed:false,reviewPassed:false,unfinished:false,calls:ai.calls,model:answer.model});emit('model',{model:answer.model,calls:ai.calls});status('Ett riktigt AI-svar mottogs. Detta testar anslutningen, inte hela agenten.','success');}
   else{result=await runAgent({question,ai,space,signal,maxSteps:Number($('steps').value),review:$('review').checked,advanced:settings.advanced,mode:settings.mode,verifyBehavior:true,emit});status(result.unfinished?'Uppdraget är ofullständigt. Se kvarvarande problem eller tryck Fortsätt.':'Leveranskontrollen är klar. Kontrollera resultat och filer.',result.unfinished?'warning':'success');}
