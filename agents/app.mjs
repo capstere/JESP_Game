@@ -1,5 +1,5 @@
 import {backendModels,DEFAULT_WORKER,DEFAULT_CRITIC} from './backend.mjs?v=6.3.0';
-import {AI,Workspace,runAgent,freeModels,VERSION,check} from './core.mjs?v=6.3.0';
+import {AI,Workspace,runAgent,freeModels,VERSION,check} from './core.mjs?v=6.4.0';
 import {executeJS} from './sandbox.mjs?v=5.2.0';
 import {zipFiles} from './zip.mjs';
 import {localAnswer,unloadLocal} from './local.mjs';

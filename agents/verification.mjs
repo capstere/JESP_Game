@@ -1,7 +1,9 @@
-import {projectSelectionFixture,checkSuiteAgainstOracle,projectPropertyTest,fpsPropertyTest} from './oracle.mjs?v=6.2.0';
+import {projectSelectionFixture,checkSuiteAgainstOracle,projectPropertyTest,fpsPropertyTest} from './oracle.mjs?v=6.4.0';
 export {checkSuiteAgainstOracle,projectPropertyTest,fpsPropertyTest};
 // Independent executable checks. Model opinion alone cannot set passed=true.
 export const artifactKey = space => JSON.stringify([...space.files.values()].map(f=>[f.name,f.version]).sort((a,b)=>a[0].localeCompare(b[0])));
+export const currentTrustedPass = space => !!(space.verification?.trusted && space.verification.passed===true && space.verification.key===artifactKey(space) && space.verification.suite?.length);
+export const currentTrustedFailure = space => !!(space.verification?.trusted && space.verification.passed===false && space.verification.key===artifactKey(space) && space.verification.suite?.length);
 export const verificationRequired = space => !!(space.verifyBehavior && space.backend && space.advanced && space.allowCode && space.taskKind==='build');
 export function verificationIssues(space) {
   if(!verificationRequired(space))return [];
@@ -69,7 +71,7 @@ export async function executeSuite(space,emit=()=>{}) {
     results.push({id:test.id,requirement:test.requirement,passed:!error,error:error||null,evidence:'tool:'+event.id,assertions:data?.assertions||0});
   }
   const stable=key===artifactKey(space);v.key=stable?key:null;v.results=results;v.passed=stable&&results.length>0&&results.every(r=>r.passed);v.executions=(v.executions||0)+1;
-  space.pendingIssues=(space.pendingIssues||[]).filter(s=>!s.startsWith('VERIFY: '));
+  space.pendingIssues=(space.pendingIssues||[]).filter(s=>!s.startsWith('VERIFY: ') && !(v.trusted&&v.passed&&s.startsWith('TEST: ')));
   space.pendingIssues.push(...verificationIssues(space));
   emit('trace',{type:'behavior_verification',passed:v.passed,executions:v.executions,results});
   return v;

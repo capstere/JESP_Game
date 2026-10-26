@@ -1,4 +1,5 @@
 import {computationEvidence} from './final-review.mjs?v=6.1.0';
+import {currentTrustedPass} from './verification.mjs?v=6.4.0';
 /* Evidence handling is deterministic. Presence of text is NOT proof of truth. */
 export function requestedFiles(question) {
   const names = new Set();
@@ -101,7 +102,7 @@ export function completionIssues(space,answer='') {
     const read=sources.filter(s=>s.status==='read').length;
     if(read<min)issues.push(`Läsbart underlag saknas: ${read}/${min} källor har hämtats med tillräcklig text.`);
   }
-  for(const f of space.files.values()) {
+  if(!currentTrustedPass(space))for(const f of space.files.values()) {
     const tests=space.audit.filter(e=>e.tool==='test_js' && (e.args?.name===f.name||e.data?.file===f.name) && (e.data?.version===f.version||!e.data?.version));
     if(tests.length && (tests.at(-1).data?.passed===false||tests.at(-1).ok===false))issues.push('Misslyckat test för '+f.name);
   }

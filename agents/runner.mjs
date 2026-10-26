@@ -1,11 +1,11 @@
-import {artifactKey,verificationRequired,verificationIssues,verifierPrompt,verifierInput,verifierDefinitions,unwrapVerifierDecision,normalizeSuite,checkSuiteAgainstOracle,projectPropertyTest,fpsPropertyTest,executeSuite} from './verification.mjs?v=6.2.0';
-import {synthesisReady,SYNTHESIS_INSTRUCTION} from './controller.mjs?v=6.1.0';
+import {artifactKey,currentTrustedPass,currentTrustedFailure,verificationRequired,verificationIssues,verifierPrompt,verifierInput,verifierDefinitions,unwrapVerifierDecision,normalizeSuite,checkSuiteAgainstOracle,projectPropertyTest,fpsPropertyTest,executeSuite} from './verification.mjs?v=6.4.0';
+import {synthesisReady,SYNTHESIS_INSTRUCTION} from './controller.mjs?v=6.4.0';
 import {normalizeToolArguments} from './arguments.mjs?v=6.1.0';
 import {finalAnswerIssues} from './final-review.mjs?v=6.1.0';
 import {unsupportedReviewerIssue} from './requirements.mjs?v=6.2.0';
-import {backendToolDefinitions,taskKind,normalizeStrategy,strategyDefinitions,advancedPrompt,editingDefinitions,qualityIssues,reviewCheckIssues} from './quality.mjs?v=6.2.0';
+import {backendToolDefinitions,taskKind,normalizeStrategy,strategyDefinitions,advancedPrompt,editingDefinitions,qualityIssues,reviewCheckIssues} from './quality.mjs?v=6.4.0';
 import {toolDefinitions,reviewDefinitions} from './protocol.mjs?v=5.1.1';
-import {snapshot,completionIssues,requestedFiles} from './evidence.mjs?v=6.1.0';
+import {snapshot,completionIssues,requestedFiles} from './evidence.mjs?v=6.4.0';
 
 // Keep operational evidence, never hidden model reasoning, in the downloadable trace.
 function record(space,emit,type,data={}) {
@@ -19,6 +19,10 @@ export function clearResolvedIssues(space) {
 function nextTask(space,critic) {
   const missing=remainingFiles(space),present=[...space.files.keys()];
   if(space.advanced&&!critic&&space.taskKind==='build'&&!(space.files?.size)&&/(?:\bfps\b|first[- ]person|förstaperson)/i.test(space.question||''))return 'NÄSTA DELUPPGIFT: Anropa scaffold_fps med {} NU för en fungerande startmotor med index.html, logic.js och game.js. Anpassa endast efter faktiska kravfel. Kör därefter verifierbara tester mot filerna; en befintlig mall är inte ett godkänt slutresultat.';
+  if(space.advanced&&!critic&&currentTrustedFailure(space)){
+    const failures=space.verification.results.filter(x=>!x.passed).map(x=>x.id+': '+x.error);
+    return 'LÅST OBEROENDE FEL: '+failures.join('; ').slice(0,4500)+'\nGör nu EN FAKTISK ÄNDRING i den berörda kodfilen med edit_file, patch_files eller write_file. Ändra INTE testkod eller facit. Koden finns i arbetsytans aktuella state. Efter ändringen körs exakt samma referenstest automatiskt.';
+  }
   if(space.advanced)return critic?'GRANSKA varje C-kriterium mot aktuell kod/text och verktygsbevis. En allmän godkännandefras räcker inte.': 'AKTUELLT MÅL: '+space.strategy?.objective+'\nVALD LÖSNING: '+space.strategy?.choice+'\n'+(missing.length?'Återstående leveranser: '+missing.join(', ')+'. Bygg dem med verkligt innehåll.':'Alla filnamn finns, men innehållet måste fortfarande uppfylla varje kriterium. Slutför implementation och kontroller före finish.')+'\nKRAV: '+JSON.stringify(space.strategy?.criteria||[])+'\nKRITIK/FEL: '+JSON.stringify(space.pendingIssues||[])+'\nOBEROENDE MOTEXEMPEL: '+JSON.stringify(space.verification?.results?.filter(t=>!t.passed).map(t=>({test:t.id,requirement:t.requirement,error:t.error}))||[])+'\nÅTGÄRD: Ändra den verkliga orsaken i kodfilerna med edit_file/write_file/append_file, inte testerna. Efter ändring körs samma tester igen.';
   if(critic)return 'KONTROLLUPPDRAG: granska aktuella filer mot användarens uppdrag. Äldre felmeddelanden är inte bevis för att ett fel finns kvar. Returnera pass eller konkreta rättningar.';
   if(missing.length)return 'NÄSTA DELUPPGIFT: '+(present.length?'Skapa nu den saknade filen '+missing[0]+' med write_file.':'Samla nödvändigt underlag och skapa därefter '+missing[0]+' med write_file.')+' Redan sparade filer: '+(present.join(', ')||'inga')+'. Återstående leveranser: '+missing.join(', ')+'. Skriv inte om redan sparade filer innan saknade leveranser har skapats, utom för ett faktiskt testfel eller kritik. Filinnehåll och krav finns i ursprungsuppdraget. Denna styrning kommer från appen, inte från en webbsida.';
@@ -54,6 +58,7 @@ async function toolAction(space,action,emit,check,signal,origin='agent') {
   try {
     if(action.argumentError)throw new Error(action.argumentError);
     const normalized=normalizeToolArguments(requestedTool,args);args=normalized.args;argumentNormalization=normalized.changes;
+    if(origin==='agent'&&currentTrustedFailure(space)&&!['write_file','edit_file','patch_files','append_file'].includes(tool))throw new Error('Oberoende testet är underkänt. Ändra kodfilen först: '+space.verification.results.filter(t=>!t.passed).map(t=>t.error).join(' | ').slice(0,700));
     const missing=remainingFiles(space);
     const failedCheck=space.audit.some(e=>['inspect_file','test_js'].includes(e.tool) && (e.args?.name===args.name||e.data?.file===args.name) && (!e.ok||e.data?.passed===false));
     const repairRequested=space.reviews.at(-1)?.verdict==='revise';
@@ -83,9 +88,14 @@ async function toolAction(space,action,emit,check,signal,origin='agent') {
     const failed=!event.ok||event.data?.passed!==true||!(event.data?.assertions>0);
     space.pendingIssues=space.pendingIssues.filter(x=>!x.startsWith('TEST: '));
     if(failed){
+      if(currentTrustedPass(space)){
+        record(space,emit,'advisory_test_failure',{reason:'A model-written test conflicts with a passing locked reference suite. This report is advisory, not a proof of regression.',error:event.error||event.data?.error||'',toolId:event.id});
+        space.pendingIssues=space.pendingIssues.filter(x=>!x.startsWith('TEST: '));
+      }else{
       const names=(Array.isArray(args.files)?args.files:typeof args.name==='string'?[args.name]:[]).filter(n=>typeof n==='string');
       space.pendingIssues.push('TEST: '+names.join(', ')+': '+(event.error||event.data?.error||'Inga körda assertions')+'. Felsök den aktuella kodfilen; kör inte samma fel oförändrat.');
       record(space,emit,'repair_required',{reason:'actual_test_failure',files:names,error:event.error||event.data?.error||'No assertions',nextRole:'repair'});
+      }
     }else{
       const current=new Set((event.data.versions||[]).filter(v=>space.files.get(v.name)?.version===v.version).map(v=>v.name));
       space.pendingIssues=space.pendingIssues.filter(x=>!x.startsWith('Inga godkända assertions mot aktuell version')&&![...current].some(n=>x==='Misslyckat test för '+n||x==='Senaste testet för aktuell version misslyckades: '+n));
@@ -137,7 +147,8 @@ export async function runAgentImpl({question,ai,space,signal,maxSteps=12,review=
       const remaining=maxSteps-step+1;
       const planning=space.advanced&&!space.strategy;
       // Tests are written by a distinct role and retained unchanged for subsequent repairs.
-      let canVerify=!planning&&!reviewNext&&verificationRequired(space)&&space.expectedNames.size&&remainingFiles(space).length===0;
+      const earlyTrusted=(!planning&&!reviewNext&&verificationRequired(space))&&(space.verification?.trusted&&space.verification?.suite?.length||projectPropertyTest(space));
+      let canVerify=!planning&&!reviewNext&&verificationRequired(space)&&space.expectedNames.size&&(remainingFiles(space).length===0||!!earlyTrusted);
       if(canVerify){
         const signature=JSON.stringify([...space.files.values()].map(f=>[f.name,f.version]));
         if(space.projectCheckpoint?.signature!==signature){
@@ -201,6 +212,11 @@ export async function runAgentImpl({question,ai,space,signal,maxSteps=12,review=
       if(planning)tools=strategyDefinitions();
       else if(space.advanced&&!reviewNext){const extra=editingDefinitions(space),names=new Set(extra.map(t=>t.function.name));tools=[...tools.filter(t=>!names.has(t.function.name)),...extra];}
       if(space.backend&&!planning&&!reviewNext&&!synthesizing)tools=backendToolDefinitions(tools,space);
+      if(!planning&&!reviewNext&&currentTrustedFailure(space)){
+        const allowed=new Set(['write_file','edit_file','patch_files','append_file']);
+        tools=tools.filter(t=>allowed.has(t.function.name));
+        record(space,emit,'repair_focus',{reason:'trusted_independent_failure',allowed:[...allowed],failures:space.verification.results.filter(t=>!t.passed).map(t=>t.error)});
+      }
       if(synthesizing)tools=toolDefinitions(space).filter(t=>t.function.name==='finish');
       const answer=await ask(messages,tools,reviewNext?'critic':phase);
       let decision;

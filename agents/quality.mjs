@@ -1,6 +1,7 @@
 import {FINAL_REVIEW_PROMPT,CALCULATION_PROMPT} from './final-review.mjs?v=6.1.0';
 import {enforceUserContract} from './requirements.mjs?v=6.2.0';
-export * from './goal-contract.mjs?v=6.2.0';
+import {currentTrustedPass} from './verification.mjs?v=6.4.0';
+export * from './goal-contract.mjs?v=6.4.0';
 import {qualityIssues as baseQuality,reviewCheckIssues as baseReview,taskKind as baseTaskKind,advancedPrompt as basePrompt,normalizeStrategy as baseStrategy,strategyDefinitions as baseStrategyDefinitions} from './goal-contract.mjs?v=6.2.0';
 export function taskKind(question,mode='auto') {
  if(mode!=='auto')return baseTaskKind(question,mode);
@@ -15,6 +16,7 @@ const versions=e=>Array.isArray(e?.data?.versions)?e.data.versions:e?.data?.vers
 export function qualityIssues(space) {
  const issues=baseQuality(space);
  if(!space.advanced)return issues;
+ if(currentTrustedPass(space))return [...new Set(issues)];
  for(const f of space.files.values()){
   const tests=space.audit.filter(e=>e.tool==='test_js'&&versions(e).some(v=>v.name===f.name&&v.version===f.version));
   if(tests.length&&(!tests.at(-1).ok||tests.at(-1).data?.passed!==true))issues.push('Senaste testet för aktuell version misslyckades: '+f.name);
