@@ -58,3 +58,10 @@ test('usage-only final chunk and CRLF SSE separators supported',async()=>{
  const res=await consumeChatStream(responseFromParts(events));
  assert.equal(res.choices[0].message.content,'OK');assert.equal(res.usage.cost,0);
 });
+
+test('partial SSE is flagged non-retriable while a pre-response 503 remains retryable',async()=>{
+ const incomplete=responseFromParts([event(chunk({content:'partial'},'stop'))]);
+ await assert.rejects(consumeChatStream(incomplete),e=>e.streamPartial===true&&e.status===502);
+ const denied=new Response(JSON.stringify({error:'Provider unavailable'}),{status:503,headers:{'Content-Type':'application/json','Retry-After':'5'}});
+ await assert.rejects(consumeChatStream(denied),e=>e.streamPartial===false&&e.status===503&&e.retryAfter===5);
+});
