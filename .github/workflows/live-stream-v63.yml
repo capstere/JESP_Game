@@ -2,10 +2,12 @@ name: JESP 6.3 streamed agent browser integration
 on:
   push:
     branches: [feat/colibri-live-stream-v63]
-  pull_request:
-    paths: ['agents/**', 'backend/**', 'tests/live-**', 'index.html', '.github/workflows/live-stream-v63.yml']
+  workflow_dispatch:
 permissions:
   contents: read
+concurrency:
+  group: jesp-v63-provider-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   browser:
     runs-on: ubuntu-latest
