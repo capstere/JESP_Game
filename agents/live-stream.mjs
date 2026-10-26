@@ -10,7 +10,7 @@ export function visibleText(source=''){
     .replace(/<(?:t|th|thi|thin)$/i,'');
 }
 function streamError(message,status=502){
- const error=new Error(String(message).slice(0,600));error.status=status;return error;
+ const error=new Error(String(message).slice(0,600));error.status=status;error.streamPartial=true;return error;
 }
 function normalError(data,status){
  const error=streamError(data?.error?.message||data?.error||'Streamförfrågan misslyckades.',status);
@@ -25,6 +25,7 @@ export async function consumeChatStream(response,{signal,onToken=()=>{},requeste
   const err=normalError(data,response.status);
   const seconds=Number(response.headers.get('Retry-After'));
   if(Number.isFinite(seconds)&&seconds>0)err.retryAfter=seconds;
+  err.streamPartial=false;
   throw err;
  }
  if(!/text\/event-stream/i.test(response.headers.get('content-type')||''))throw streamError('Streamingservern skickade inte SSE.',502);
@@ -38,7 +39,7 @@ export async function consumeChatStream(response,{signal,onToken=()=>{},requeste
   if(!data||done)return;
   if(data==='[DONE]'){done=true;return;}
   let chunk;try{chunk=JSON.parse(data);}catch{throw streamError('Ogiltigt SSE-data från AI-tjänsten.',502);}
-  if(chunk.error)throw normalError(chunk,Number(chunk.error.code)||502);
+  if(chunk.error){const err=normalError(chunk,Number(chunk.error.code)||502);err.streamPartial=true;throw err;}
   if(typeof chunk.model==='string')model=chunk.model;
   if(chunk.usage)usage=chunk.usage;
   if(chunk.gateway_version)gatewayVersion=chunk.gateway_version;
