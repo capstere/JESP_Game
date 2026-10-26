@@ -64,8 +64,7 @@ const streamHeaders={
  'Content-Type':'text/event-stream; charset=utf-8',
  'Access-Control-Allow-Origin':ORIGIN,
  'Vary':'Origin','Cache-Control':'no-store, no-transform',
- 'X-Content-Type-Options':'nosniff','X-Accel-Buffering':'no',
- 'Connection':'keep-alive'
+ 'X-Content-Type-Options':'nosniff','X-Accel-Buffering':'no'
 };
 export function filterStreamChunk(chunk,state){
  if(chunk?.error)throw new Error(String(chunk.error?.message||'AI provider stream error').slice(0,500));
