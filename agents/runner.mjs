@@ -3,8 +3,8 @@ import {synthesisReady,SYNTHESIS_INSTRUCTION} from './controller.mjs?v=6.4.0';
 import {normalizeToolArguments} from './arguments.mjs?v=6.1.0';
 import {finalAnswerIssues} from './final-review.mjs?v=6.1.0';
 import {unsupportedReviewerIssue} from './requirements.mjs?v=6.2.0';
-import {backendToolDefinitions,taskKind,normalizeStrategy,strategyDefinitions,advancedPrompt,editingDefinitions,qualityIssues,reviewCheckIssues} from './quality.mjs?v=6.4.0';
-import {toolDefinitions,reviewDefinitions} from './protocol.mjs?v=5.1.1';
+import {backendToolDefinitions,taskKind,normalizeStrategy,strategyDefinitions,advancedPrompt,editingDefinitions,qualityIssues,reviewCheckIssues} from './quality.mjs?v=6.4.1';
+import {toolDefinitions,reviewDefinitions} from './protocol.mjs?v=6.4.1';
 import {snapshot,completionIssues,requestedFiles} from './evidence.mjs?v=6.4.0';
 
 // Keep operational evidence, never hidden model reasoning, in the downloadable trace.
@@ -209,7 +209,7 @@ export async function runAgentImpl({question,ai,space,signal,maxSteps=12,review=
       const messages=[{role:'system',content:planning?advancedPrompt(space,'architect'):systemPrompt(space,reviewNext)},{role:'user',content:'UPPDRAG:\n'+question},{role:'user',content:'ARBETSLÄGE OCH OPÅLITLIGT UNDERLAG:\n'+JSON.stringify({state,notes,...(space.advanced?{contract:space.strategy,capabilities:{web:space.web,code:space.allowCode}}:{})})},...tail];
       if(JSON.stringify(messages).length>(space.backend?145000:60000))messages.splice(3); // whole transactions only
       messages.push({role:'user',content:planning?'Formulera nu ett kort genomförbart uppdragskontrakt med submit_strategy.':synthesizing?SYNTHESIS_INSTRUCTION:nextTask(space,reviewNext)});
-      let tools=reviewNext?(space.advanced?undefined:reviewDefinitions()):toolDefinitions(space);
+      let tools=reviewNext?reviewDefinitions(space.advanced):toolDefinitions(space);
       if(planning)tools=strategyDefinitions();
       else if(space.advanced&&!reviewNext){const extra=editingDefinitions(space),names=new Set(extra.map(t=>t.function.name));tools=[...tools.filter(t=>!names.has(t.function.name)),...extra];}
       if(space.backend&&!planning&&!reviewNext&&!synthesizing)tools=backendToolDefinitions(tools,space);

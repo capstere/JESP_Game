@@ -16,7 +16,18 @@ export function toolDefinitions({web=true,allowCode=false}={}){
   ...(allowCode?[definition('test_js','Run an explicitly authorized JavaScript assertion test, without network, DOM, imports or packages. Throw Error on failure. An optional named file is prepended to code.',{name:string,code:string},['code'])]:[])
  ];
 }
-export function reviewDefinitions(){return [definition('submit_review','Submit the final reviewed answer and remaining problems, based only on actual evidence. This does not change files.',{answer:string,issues:{type:'array',items:string},verdict:{type:'string',enum:['pass','revise']}},['answer','issues','verdict'])];}
+export function reviewDefinitions(advanced=false){
+ const props={answer:string,issues:{type:'array',maxItems:12,items:string},verdict:{type:'string',enum:['pass','revise']}};
+ const required=['answer','issues','verdict'];
+ if(advanced){
+  props.checks={type:'array',minItems:1,maxItems:6,items:{type:'object',properties:{
+   id:string,status:{type:'string',enum:['pass','fail','unknown']},evidence:{type:'array',minItems:1,maxItems:6,items:string},finding:string
+  },required:['id','status','evidence','finding'],additionalProperties:false}};
+  props.answer_check={type:'object',properties:{status:{type:'string',enum:['pass','fail','unknown']},evidence:{type:'array',minItems:1,maxItems:6,items:string},finding:string},required:['status','evidence','finding'],additionalProperties:false};
+  required.push('checks','answer_check');
+ }
+ return [definition('submit_review','Submit SHORT evidence-based verdict for each criterion and the exact candidate answer. Use existing tool/file references. Never invent test passes.',props,required)];
+}
 export function decodeNativeCalls(message){
  if(!Array.isArray(message?.tool_calls)||!message.tool_calls.length)return null;
  if(message.tool_calls.length>4)throw new Error('AI:n begärde fler än fyra samtidiga verktyg; inget kördes.');
@@ -30,7 +41,7 @@ export function decodeNativeCalls(message){
  }
  if(actions.length===1&&!actions[0].argumentError&&['finish','submit_review'].includes(actions[0].tool)){
   const a=actions[0];if(typeof a.args.answer!=='string'||!a.args.answer.trim())throw new Error('Avslut saknar svarstext.');
-  return {text:JSON.stringify(a.tool==='finish'?{kind:'final',answer:a.args.answer}:{answer:a.args.answer,issues:Array.isArray(a.args.issues)?a.args.issues:[],verdict:a.args.verdict})};
+  return {text:JSON.stringify(a.tool==='finish'?{kind:'final',answer:a.args.answer}:{answer:a.args.answer,issues:Array.isArray(a.args.issues)?a.args.issues:[],verdict:a.args.verdict,...(Array.isArray(a.args.checks)?{checks:a.args.checks}:{}),...(a.args.answer_check&&typeof a.args.answer_check==='object'?{answer_check:a.args.answer_check}:{})})};
  }
  return {text:JSON.stringify({kind:'actions',actions}),toolCalls,nativeContent:typeof message.content==='string'?message.content:null};
 }

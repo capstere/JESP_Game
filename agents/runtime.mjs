@@ -1,6 +1,6 @@
-import {requestedFiles,sourceDocuments,cleanText,textQuality,verifyQuote} from './evidence.mjs?v=5.1.0';
-import {decodeNativeCalls} from './protocol.mjs?v=5.1.0';
-import {runAgentImpl} from './runner.mjs?v=5.1.0';
+import {requestedFiles,sourceDocuments,cleanText,textQuality,verifyQuote} from './evidence.mjs?v=6.4.0';
+import {decodeNativeCalls} from './protocol.mjs?v=6.4.1';
+import {runAgentImpl} from './runner.mjs?v=6.4.1';
 /* JESP AI v5. No API keys, paid routes, accounts or persistent prompt storage. */
 export const VERSION = '5.1.0';
 const POLL = 'https://text.pollinations.ai/openai';
