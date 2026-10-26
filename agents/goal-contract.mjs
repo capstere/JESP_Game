@@ -1,3 +1,4 @@
+import {currentTrustedPass} from './verification.mjs?v=6.4.0';
 /* Goal contracts and acceptance checks. These checks are evidence gates, not IQ scores. */
 const text={type:'string'};
 const fn=(name,description,properties,required)=>({type:'function',function:{name,description,parameters:{type:'object',properties,required,additionalProperties:false}}});
@@ -104,7 +105,7 @@ export function qualityIssues(space) {
     for(const f of code)if(/(?:TODO\s*:?\s*(?:implement|bygg)|implementation\s+goes\s+here|skriv\s+din\s+kod\s+här)/i.test(f.content))issues.push('Ofärdig platshållare i '+f.name);
     if(space.allowCode&&code.some(f=>/\.(js|mjs)$/.test(f.name))) {
       const good=space.audit.some(e=>e.tool==='test_js'&&e.ok&&e.data?.passed===true&&e.data?.assertions>0&&(e.data.versions||[]).length&&(e.data.versions||[]).every(v=>space.files.get(v.name)?.version===v.version));
-      if(!good)issues.push('Inga godkända assertions mot aktuell version av någon faktisk kodfil. Använd test_js med name/files.');
+      if(!good&&!currentTrustedPass(space))issues.push('Inga godkända assertions mot aktuell version av någon faktisk kodfil. Använd test_js med name/files.');
     }
   }
   issues.push(...projectCheck(space).issues);

@@ -70,7 +70,7 @@ export function projectPropertyTest(space){
     "assert.equal(new Set(r.selected).size,r.selected.length,'Duplicate selected IDs');",
     "let c=0,b=0;for(const id of r.selected){const p=items.find(x=>x.id===id);assert(!!p,'Unknown selected ID');c+=p.cost;b+=p.benefit;}",
     'let best=0;for(let mask=0;mask<(1<<items.length);mask++){let cost=0,benefit=0;for(let i=0;i<items.length;i++)if(mask&(1<<i)){cost+=items[i].cost;benefit+=items[i].benefit;}if(cost<=budget&&benefit>best)best=benefit;}',
-    "assert(c<=budget,'Budget exceeded');assert.equal(r.total_cost,c,'Incorrect cost');assert.equal(r.total_benefit,b,'Incorrect benefit');assert.equal(b,best,'Nonoptimal result');assert.equal(JSON.stringify(items),original,'Input mutated');checked++;",
+    "assert(c<=budget,'Budget exceeded');assert.equal(r.total_cost,c,'Incorrect cost');assert.equal(r.total_benefit,b,'Incorrect benefit');assert.equal(b,best,'Nonoptimal result '+JSON.stringify({items,budget,actual:{selected:r.selected,benefit:b,cost:c},expectedBenefit:best}));assert.equal(JSON.stringify(items),original,'Input mutated');checked++;",
     '}',
     'checkProjectSelection([],0);',
     "checkProjectSelection([{id:'FREE',cost:0,benefit:23}],0);",
