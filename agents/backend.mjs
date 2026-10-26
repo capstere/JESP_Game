@@ -64,7 +64,8 @@ export async function backendAsk(ai,messages,signal,maxTokens=4096,tools){
    if(result.truncated&&ai.reasoning==='auto'){ai.backendEffortCaps??=new Set();ai.backendEffortCaps.add(effortKey);}
    return {...result,usage:data.usage,requestedReasoning:effort,requestedModel:model,gatewayVersion:data.gateway_version};
   }catch(e){
-   check(signal);const seconds=e.retryAfter||5;
+   check(signal);if(e.streamPartial)throw e; // Never merge fragments from two different attempts.
+   const seconds=e.retryAfter||5;
    if(attempt||![429,500,502,503,504].includes(e.status)||seconds>90)throw e;
    if(e.status===504&&ai.reasoning==='auto'){effort='low';budget=Math.min(budget,4096);inputs=[...messages,{role:'user',content:'Återhämtning efter tidsgräns. Gör endast ett kort nästa steg: en liten komplett fil eller exakt versionskontrollerad ändring. Försök inte skriva hela projektet i ett svar. Inga verktyg kördes från det förra anropet.'}];}
    ai.onStatus('Backend HTTP '+e.status+'. Respekterar väntetiden '+seconds+' s; ett återförsök.');await pause(seconds*1000,signal);
