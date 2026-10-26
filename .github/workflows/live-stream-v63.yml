@@ -25,3 +25,22 @@ jobs:
           npx playwright install chromium
       - name: Verify actual browser SSE opt-in, safe failure, and old JSON path
         run: node tests/live-ui-v63.mjs
+
+  live_provider:
+    needs: browser
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Genuine anonymous no-login SSE model inference
+        run: node tests/live-stream-real-v63.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: v63-live-sse-evidence
+          path: stream-evidence/
