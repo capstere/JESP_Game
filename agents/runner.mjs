@@ -144,6 +144,7 @@ export async function runAgentImpl({question,ai,space,signal,maxSteps=12,review=
   try {
     for(let step=1;step<=maxSteps;step++) {
       check(signal);
+      if(currentTrustedPass(space))space.pendingIssues=space.pendingIssues.filter(issue=>!issue.startsWith('TEST: '));
       const remaining=maxSteps-step+1;
       const planning=space.advanced&&!space.strategy;
       // Tests are written by a distinct role and retained unchanged for subsequent repairs.
