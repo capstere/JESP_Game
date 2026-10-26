@@ -1,5 +1,7 @@
 import {extractAnswer,check,pause,retrySeconds} from './runtime.mjs?v=5.1.1';
+import {consumeChatStream} from './live-stream.mjs?v=6.3.0';
 export const GATEWAY='https://dzjjffgohxeoahtflqjo.supabase.co/functions/v1/jesp-gateway';
+export const GATEWAY_STREAM='https://dzjjffgohxeoahtflqjo.supabase.co/functions/v1/jesp-stream';
 export const DEFAULT_WORKER='nvidia/nemotron-3.5-lightning:free';
 export function roleBudget(ai){const auto=ai.reasoning==='auto'||!ai.reasoning;const reflective=['architect','critic','repair','synthesis','verifier'].includes(ai.role);return {effort:auto?(reflective?'medium':'low'):ai.reasoning,maxTokens:auto?(ai.role==='architect'?3072:reflective?8192:6144):12288};}
 export const DEFAULT_CRITIC='nvidia/nemotron-3-ultra-550b-a55b:free';
@@ -17,6 +19,21 @@ async function jsonRequest(path,body,signal){
  }catch(e){if(controller.signal.aborted)throw controller.signal.reason;throw e;}
  finally{clearTimeout(timer);signal?.removeEventListener('abort',cancel);}
 }
+
+// Dedicated, zero-login SSE endpoint. The old JSON endpoint stays untouched.
+export async function streamedRequest(path,body,signal,onToken=()=>{}){
+ check(signal);const controller=new AbortController();
+ const cancel=()=>controller.abort(signal?.reason||new DOMException('Avbrutet','AbortError'));
+ signal?.addEventListener('abort',cancel,{once:true});
+ const timer=setTimeout(()=>controller.abort(new DOMException('Streaminganropet nådde tidsgränsen','TimeoutError')),125000);
+ try{
+  const response=await fetch(GATEWAY_STREAM+path,{method:'POST',credentials:'omit',referrerPolicy:'no-referrer',headers:{'Content-Type':'application/json'},body:JSON.stringify(body),signal:controller.signal});
+  return await consumeChatStream(response,{signal:controller.signal,requestedModel:body.model,onToken});
+ }catch(e){
+  if(controller.signal.aborted)throw controller.signal.reason||e;
+  throw e;
+ }finally{clearTimeout(timer);signal?.removeEventListener('abort',cancel);}
+}
 export async function backendModels(signal){const d=await jsonRequest('/models',null,signal);if(!Array.isArray(d.models))throw new Error('Ogiltig modellkatalog.');return d.models.filter(m=>m.supported_parameters?.includes('tools')&&!/content-safety/.test(m.id));}
 export async function backendAsk(ai,messages,signal,maxTokens=4096,tools){
  const model=['architect','critic','repair','synthesis','verifier'].includes(ai.role)?ai.criticModel:ai.workerModel;
@@ -28,7 +45,16 @@ export async function backendAsk(ai,messages,signal,maxTokens=4096,tools){
  for(let attempt=0;attempt<2;attempt++){
   check(signal);ai.onStatus((ai.role==='critic'?'Granskare: ':'Arbetsmodell: ')+model+' · anonym backend');ai.calls++;
   try{
-   const data=await jsonRequest('/chat',{model,messages:inputs,max_tokens:maxTokens<=64?1024:budget,reasoning:effort,...(tools?{tools}:{})},signal);
+   const request={model,messages:inputs,max_tokens:maxTokens<=64?1024:budget,reasoning:effort,...(tools?{tools}:{})};
+   let data;
+   if(ai.liveStream){
+    try{data=await streamedRequest('/chat-stream',request,signal,text=>ai.onToken?.(text,{role:ai.role||'work',model}));}
+    catch(e){
+     if(![404,405,501].includes(e.status))throw e;
+     ai.onStatus('Streamingservern saknas; använder den beprövade JSON-anslutningen för detta anrop.');
+     data=await jsonRequest('/chat',request,signal);
+    }
+   }else data=await jsonRequest('/chat',request,signal);
    let result;
    try{result=extractAnswer(data);}catch(e){
     if(/ogiltigt verktygsanrop|fler än fyra samtidiga|Avslut saknar svarstext/.test(e.message||'')){ai.jsonProtocol=true;return {text:'',protocolError:'Ogiltigt funktionsanrop. Inget kördes. Använd komplett JSON nästa gång.',model:data.model,truncated:false,usage:data.usage};}
