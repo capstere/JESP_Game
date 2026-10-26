@@ -97,7 +97,9 @@ export function fpsPropertyTest(space) {
     "await key('d',300);assert(Math.abs(window.gameState.angle-start.angle)>0.01,'D must rotate player');",
     "window.resetGame();await wait(80);assert(Math.hypot(window.gameState.x-start.x,window.gameState.y-start.y)<0.001&&Math.abs(window.gameState.angle-start.angle)<0.001,'Reset must return to ORIGINAL start position and direction');",
     "await key('Space',120);assert(window.gameState.score>start.score,'Shooting the visible initial target must increase score');",
+    "if(start.target&&typeof start.target.active==='boolean')assert(window.gameState.target?.active===false,'Shooting must deactivate the hit target, not merely score for a wall');",
     "await key('r',80);assert(window.gameState.score===start.score,'R must reset score');",
+    "if(start.target&&typeof start.target.active==='boolean')assert(window.gameState.target?.active===true,'R must restore the starting target');",
     "const ctx=canvas.getContext('2d');assert(ctx,'Canvas 2D context required');",
     "const pixels=ctx.getImageData(0,0,canvas.width,canvas.height).data,colors=new Set();for(let i=0;i<pixels.length;i+=48)colors.add(pixels[i]+','+pixels[i+1]+','+pixels[i+2]);assert(colors.size>=3,'Canvas must show at least three colors');"
   ].join('\n');

@@ -1,5 +1,5 @@
 {
-  "version": "6.0.1",
+  "version": "6.2.0-candidate",
   "date": "2026-10-23",
   "model_weights_changed": false,
   "deterministic_tests": {
@@ -25,5 +25,24 @@
     "run_id": 40028192842,
     "result": "failed",
     "detail": "Worker truncation incorrectly reduced reflective effort for all later roles. Both tasks exhausted their budget in repeated tests; FPS also had a script declaration collision and missing window references."
+  },
+  "released": false,
+  "merge_gate": {
+    "deterministic": "run latest PR checks",
+    "optimization": "pending real no-login 28-case check",
+    "fps": "pending real isolated browser gameplay check",
+    "published": "not deployed"
+  },
+  "changes": [
+    "preserve original user acceptance requirements when AI strategy invents contrary scoring",
+    "rollback edits that regress passing independent tests",
+    "atomic patch_files with version/uniqueness checks",
+    "route architect through catalog-listed strong free review model"
+  ],
+  "historical_last_v61": {
+    "run_id": 40204300031,
+    "optimization": "passed",
+    "fps": "failed (14m timeout)",
+    "do_not_treat_as_v62_evidence": true
   }
 }

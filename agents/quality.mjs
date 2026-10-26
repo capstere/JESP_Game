@@ -1,6 +1,7 @@
 import {FINAL_REVIEW_PROMPT,CALCULATION_PROMPT} from './final-review.mjs?v=6.1.0';
-export * from './goal-contract.mjs?v=5.2.0';
-import {qualityIssues as baseQuality,reviewCheckIssues as baseReview,taskKind as baseTaskKind,advancedPrompt as basePrompt,normalizeStrategy as baseStrategy,strategyDefinitions as baseStrategyDefinitions} from './goal-contract.mjs?v=5.2.0';
+import {enforceUserContract} from './requirements.mjs?v=6.2.0';
+export * from './goal-contract.mjs?v=6.2.0';
+import {qualityIssues as baseQuality,reviewCheckIssues as baseReview,taskKind as baseTaskKind,advancedPrompt as basePrompt,normalizeStrategy as baseStrategy,strategyDefinitions as baseStrategyDefinitions} from './goal-contract.mjs?v=6.2.0';
 export function taskKind(question,mode='auto') {
  if(mode!=='auto')return baseTaskKind(question,mode);
  const q=String(question).toLowerCase();
@@ -44,7 +45,7 @@ export function advancedPrompt(space,role) {
  if(space.backend&&role==='architect')prompt+='\nFormulera beteendekriterier som tillstånd + handling + förväntad effekt. Bevara uttryckliga startlägeskrav och nödvändiga kombinationer av kantfall; gör dem inte till svagare allmänna funktionsbeskrivningar.';
  if(space.backend&&role==='critic')prompt+=FINAL_REVIEW_PROMPT;
  if(space.verifyBehavior&&space.allowCode)prompt+='\nEn separat testroll skapar och kör bevarade beteendetester så snart leveranserna finns. VERIFY-fel måste rättas i implementationen, inte förklaras bort. Samma tester körs automatiskt om efter en filändring. Sidtest stöder riktig DOM/canvas/input i en isolerad browserram, men ingen extern nätverkstrafik och inga moduler. Välj enkla klassiska scripts, deterministiskt startläge och strikt avgränsade loopar. Leverera full funktionalitet innan du säger klart.';
- if(space.backend&&role==='worker')prompt+='\nTestverktyget har assert(villkor,meddelande), assert.equal, assert.deepEqual och assert.throws. Använd inte Chai/Jest eller array.deepEqual; inga externa testbibliotek finns. När alla leveranser finns och aktuella tester passerar går appen vidare till ett kort kandidatsvar och separat kritik. Det hindrar ändlösa omtester utan att ersätta granskningen.';
+ if(space.backend&&role==='worker')prompt+='\nTestverktyget har assert(villkor,meddelande), assert.equal, assert.deepEqual och assert.throws. Använd patch_files för samordnade versionskontrollerade ändringar i flera filer som måste klara testerna som en enhet. Använd inte Chai/Jest eller array.deepEqual; inga externa testbibliotek finns. När alla leveranser finns och aktuella tester passerar går appen vidare till ett kort kandidatsvar och separat kritik. Det hindrar ändlösa omtester utan att ersätta granskningen.';
  if(space.backend&&role==='worker')prompt+=CALCULATION_PROMPT+`
 Vid ett testfel: använd diagnostics för att lokalisera ALLA relevanta kvarvarande referenser i både kod och test. En read_file utan ändring reparerar inte felet. Om samma fel kvarstår efter två försök, gör en liten sammanhängande rättning av den berörda modulen, eller byt konkret angreppssätt. Maskera aldrig felet med hårdkodade godkända värden. Exponera DOM-fria funktioner via globalThis; håll browserkoppling i UI-filen. Isolera klassiska scriptfiler i egna IIFE/namnrymder så globala const/let inte kolliderar. Kör check_project efter att alla JS-filer finns: det kan upptäcka syntax- och deklarationskollisioner utan att köra själva appen.`;
  return prompt;
@@ -58,16 +59,40 @@ export function strategyDefinitions() {
  schema.properties.approach_a={type:'string',description:'First feasible approach and its tradeoff.'};
  schema.properties.approach_b={type:'string',description:'A distinct second feasible approach and its tradeoff.'};
  schema.properties.criteria.minItems=2;schema.properties.criteria.maxItems=5;
+ schema.properties.deliverables={type:'array',minItems:0,maxItems:6,items:{type:'string',description:'ONLY a plain file basename such as solver.js or resultat.json. No descriptions, no test steps, no extra words.'}};
  schema.required=[...schema.required.filter(k=>k!=='alternatives'),'approach_a','approach_b'];
  return definitions;
 }
 const itemText=value=>typeof value==='string'?value:typeof value?.requirement==='string'?value.requirement:typeof value?.description==='string'?value.description:typeof value?.text==='string'?value.text:'';
+
+// Observed free model put file descriptions and a procedural test task in the filename list.
+// Only recognize exact, unambiguous BASENAME + prose separators; never clean dangerous paths.
+export function normalizeModelDeliverables(values) {
+ const notes=[],names=[];
+ for(const value of values) {
+  if(typeof value!=='string'){names.push(value);continue;}
+  const original=value.trim();
+  const m=/^([\p{L}\p{N}_-]+\.(?:js|mjs|html|css|json|md|txt|csv|py|svg|yml|yaml|xml))\s+(?:(?:med|with|som|innehållande|containing|inklusive|including)\b|[-–—:]\s)/iu.exec(original);
+  if(m) { names.push(m[1]);notes.push({kind:'deliverable_description',original,normalized:m[1]});continue; }
+  if(/^(?:testkörning|test(?:ing| run|s)?|testa(?:ning)?|kör tester|run tests|verify|verifiering|granskning)\b/iu.test(original)&&!/^\S+\.(?:js|mjs|html|css|json|md|txt|csv|py|svg|yml|yaml|xml)$/iu.test(original)) {
+   notes.push({kind:'procedural_step_not_file',original});continue;
+  }
+  names.push(value); // keep malformed/path-like names unchanged so validateName rejects them
+ }
+ return {names,notes};
+}
+
 export function normalizeStrategy(value,space,validateName) {
  if(!value||typeof value!=='object')return baseStrategy(value,space,validateName);
  const normalized={...value};
  if(typeof value.approach_a==='string'&&typeof value.approach_b==='string')normalized.alternatives=[value.approach_a,value.approach_b];
  for(const key of ['alternatives','criteria','steps','assumptions'])if(Array.isArray(normalized[key]))normalized[key]=normalized[key].map(itemText);
- return baseStrategy(normalized,space,validateName);
+ const fix=Array.isArray(normalized.deliverables)?normalizeModelDeliverables(normalized.deliverables):{notes:[],names:normalized.deliverables};
+ normalized.deliverables=fix.names;
+ const contract=baseStrategy(normalized,space,validateName);
+ const protectedContract=enforceUserContract(contract,space.question);
+ space.contractCorrections=(space.contractCorrections||[]).concat(fix.notes,protectedContract.notices);
+ return protectedContract.contract;
 }
 
 // Unambiguous named-file tests: model cannot confuse a test label with a file name.

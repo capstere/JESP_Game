@@ -1,8 +1,9 @@
-import {artifactKey,verificationRequired,verificationIssues,verifierPrompt,verifierInput,verifierDefinitions,unwrapVerifierDecision,normalizeSuite,checkSuiteAgainstOracle,projectPropertyTest,fpsPropertyTest,executeSuite} from './verification.mjs?v=6.1.0';
+import {artifactKey,verificationRequired,verificationIssues,verifierPrompt,verifierInput,verifierDefinitions,unwrapVerifierDecision,normalizeSuite,checkSuiteAgainstOracle,projectPropertyTest,fpsPropertyTest,executeSuite} from './verification.mjs?v=6.2.0';
 import {synthesisReady,SYNTHESIS_INSTRUCTION} from './controller.mjs?v=6.1.0';
 import {normalizeToolArguments} from './arguments.mjs?v=6.1.0';
 import {finalAnswerIssues} from './final-review.mjs?v=6.1.0';
-import {backendToolDefinitions,taskKind,normalizeStrategy,strategyDefinitions,advancedPrompt,editingDefinitions,qualityIssues,reviewCheckIssues} from './quality.mjs?v=6.1.0';
+import {unsupportedReviewerIssue} from './requirements.mjs?v=6.2.0';
+import {backendToolDefinitions,taskKind,normalizeStrategy,strategyDefinitions,advancedPrompt,editingDefinitions,qualityIssues,reviewCheckIssues} from './quality.mjs?v=6.2.0';
 import {toolDefinitions,reviewDefinitions} from './protocol.mjs?v=5.1.1';
 import {snapshot,completionIssues,requestedFiles} from './evidence.mjs?v=6.1.0';
 
@@ -57,7 +58,23 @@ async function toolAction(space,action,emit,check,signal,origin='agent') {
     const failedCheck=space.audit.some(e=>['inspect_file','test_js'].includes(e.tool) && (e.args?.name===args.name||e.data?.file===args.name) && (!e.ok||e.data?.passed===false));
     const repairRequested=space.reviews.at(-1)?.verdict==='revise';
     if(!space.advanced && tool==='write_file' && space.files.has(args.name) && missing.length && !failedCheck && !repairRequested)throw new Error('Filen '+args.name+' finns redan. Nästa obligatoriska leverans är '+missing[0]+'. Skapa de saknade filerna innan du skriver om en befintlig fil.');
+    const protectExisting=(origin==='agent'&&['write_file','append_file','edit_file','patch_files'].includes(tool)&&space.verification?.passed===true&&space.verification.key===artifactKey(space));
+    const previousFiles=protectExisting?new Map(space.files):null;
     result={ok:true,data:await space.tool(tool,args)};
+    if(protectExisting){
+      const verification=await executeSuite(space,emit);
+      record(space,emit,'regression_check',{tool,file:args.name,passed:verification.passed,results:verification.results});
+      if(!verification.passed){
+        const counterexamples=verification.results.filter(x=>!x.passed).map(x=>x.id+': '+String(x.error||'test failed')).join('; ').slice(0,1100);
+        space.files=previousFiles;
+        space.projectCheckpoint=null;
+        emit('file',{name:args.name,rolledBack:true});
+        const restored=await executeSuite(space,emit);
+        record(space,emit,'regression_rollback',{tool,file:args.name,restored:restored.passed,counterexamples});
+        if(!restored.passed)throw new Error('Återställning kunde inte återställa föregående godkända tester.');
+        throw new Error('ÄNDRING AVVISAD – REGRESSION. Föregående fungerande filversion återställdes. '+counterexamples+' Rätta det ursprungliga kravet utan att förstöra det redan verifierade beteendet.');
+      }
+    }
   }catch(e){check(signal);result={ok:false,error:e.message||String(e)};}
   const event={id:'T'+(space.audit.length+1),tool,args,...(argumentNormalization.length?{argumentNormalization}:{}),...result,milliseconds:Date.now()-started,origin,time:new Date().toISOString()};
   space.audit.push(event);emit('observation',event);
@@ -205,6 +222,7 @@ export async function runAgentImpl({question,ai,space,signal,maxSteps=12,review=
         try{
           let raw=decision;if(decision.kind==='actions'){if(decision.actions?.length!==1||decision.actions[0].tool!=='submit_strategy'||decision.actions[0].argumentError)throw new Error('Använd endast submit_strategy för uppdragsanalysen.');raw=decision.actions[0].args;}
           space.strategy=normalizeStrategy(raw,space,name=>{if(!/^[\p{L}\p{N}][\p{L}\p{N} ._-]{0,99}\.(md|txt|html|css|js|mjs|json|csv|svg|py|xml|yaml|yml)$/iu.test(name)||name.includes('..'))throw new Error('Ogiltigt leveransnamn: '+name);});
+          if(space.contractCorrections?.length){record(space,emit,'contract_corrections',{corrections:space.contractCorrections});space.contractCorrections=[];}
           for(const n of space.strategy.deliverables)space.expectedNames.add(n);
           emit('plan',space.strategy.steps);emit('contract',space.strategy);record(space,emit,'strategy',space.strategy);space.pendingIssues=[];
         }catch(e){strategyErrors++;space.pendingIssues=['STRATEGI: '+e.message];emit('warning',e.message);record(space,emit,'strategy_error',{message:e.message,attempt:strategyErrors,decision:JSON.stringify(decision).slice(0,7000)});if(strategyErrors>=3){stopReason='strategy';break;}}
@@ -217,10 +235,21 @@ export async function runAgentImpl({question,ai,space,signal,maxSteps=12,review=
         const gates=gatesFor(candidate);
         if(!['pass','revise'].includes(decision.verdict)||typeof decision.answer!=='string')issues.push('Granskningen saknar giltigt beslut; gör om kontrollen.');
         if(decision.verdict==='revise' && !issues.length)issues.push('Granskaren begär rättning utan specifikation; kontrollera leveranser mot uppdraget.');
-        space.pendingIssues=[...new Set([...gates,...issues,...reviewCheckIssues(decision,space),...finalAnswerIssues(decision,space,draft)])];reviewed=true;
+        const rejected=issues.filter(issue=>unsupportedReviewerIssue(issue,question));
+        if(rejected.length)record(space,emit,'review_conflicts_with_user',{rejected});
+        const groundedIssues=issues.filter(issue=>!unsupportedReviewerIssue(issue,question));
+        space.pendingIssues=[...new Set([...gates,...groundedIssues,...reviewCheckIssues(decision,space).filter(issue=>!unsupportedReviewerIssue(issue,question)),...finalAnswerIssues(decision,space,draft)])];reviewed=true;
         const report={time:new Date().toISOString(),verdict:decision.verdict||'invalid',answer:String(decision.answer||''),issues:space.pendingIssues,checks:decision.checks||[],answer_check:decision.answer_check||null,final_answer:decision.final_answer||null,model:answer.model,versions:[...space.files.values()].map(f=>({name:f.name,version:f.version}))};
         space.reviews.push(report);emit('review',report);record(space,emit,'review',{verdict:report.verdict,issues:report.issues});
         if(decision.verdict==='pass'&&!space.pendingIssues.length){draft=candidate;space.draft=draft;reviewPassed=true;finished=true;stopReason='complete';record(space,emit,'answer_review',{status:'pass',check:decision.answer_check||null});break;}
+        if(decision.verdict==='revise'&&rejected.length&&!space.pendingIssues.length){
+          // Retry critic on the original user contract, not an invented wall-scoring requirement.
+          // Never silently relabel a model's revise verdict as a pass.
+          space.reviewConflicts=(space.reviewConflicts||0)+1;
+          record(space,emit,'review_retry_required',{reason:'contradicts_original_user_requirement',attempt:space.reviewConflicts});
+          if(space.reviewConflicts>=2){stopReason='review_conflict';break;}
+          reviewNext=true;tail=[];continue;
+        }
         reviewNext=false;tail=[];
         emit('warning','Kritiken skickas tillbaka till arbetsagenten för faktiska rättningar.');
         continue;
@@ -272,7 +301,7 @@ export async function runAgentImpl({question,ai,space,signal,maxSteps=12,review=
   const gates=gatesFor(draft);
   const issues=finished?[]:[...new Set([...gates,...space.pendingIssues, ...(review&&!reviewPassed?['Ingen godkänd slutgranskning av den aktuella versionen.']:[])])];
   if(!finished&&!preserveDraft){
-    draft='Ofullständigt uppdrag. '+(stopReason==='format'?'AI:n gav upprepade formatfel.':stopReason==='strategy'?'Uppdragsanalysen kunde inte valideras efter tre försök.':stopReason==='verification'?'Testförfattarens format kunde inte valideras, inga felaktiga tester kördes.':'Beslutsbudgeten tog slut.')+'\n\nSkapade filer: '+([...space.files.keys()].join(', ')||'inga')+'.\n'+issues.map(x=>'• '+x).join('\n')+'\n\nDelresultaten finns kvar. Fortsätt körningen för att arbeta vidare.';
+    draft='Ofullständigt uppdrag. '+(stopReason==='format'?'AI:n gav upprepade formatfel.':stopReason==='strategy'?'Uppdragsanalysen kunde inte valideras efter tre försök.':stopReason==='verification'?'Testförfattarens format kunde inte valideras, inga felaktiga tester kördes.':stopReason==='review_conflict'?'Granskaren fortsatte begära ett krav som motsäger originaluppdraget; leveransen markeras ofullständig.':'Beslutsbudgeten tog slut.')+'\n\nSkapade filer: '+([...space.files.keys()].join(', ')||'inga')+'.\n'+issues.map(x=>'• '+x).join('\n')+'\n\nDelresultaten finns kvar. Fortsätt körningen för att arbeta vidare.';
   }
   space.draft=draft;
   const result={answer:draft,reviewed,reviewPassed,unfinished:!finished,stopReason,issues,calls:space.totalCalls,model:ai.lastModel,files:[...space.files.values()],sources:[...space.sources.values()],audit:space.audit,reviews:space.reviews,strategy:space.strategy||null,verification:space.verification||null,taskKind:space.taskKind};

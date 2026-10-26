@@ -2,7 +2,7 @@ import {executePageTest} from './page-test.mjs?v=6.1.0';
 import {ASSERT_HARNESS} from './test-harness.mjs?v=6.1.0';
 import {failureDiagnostics,crossScriptSyntax} from './diagnostics.mjs?v=6.1.0';
 import {Workspace as BaseWorkspace,filename,check} from './runtime.mjs?v=5.1.1';
-import {projectCheck} from './quality.mjs?v=6.1.0';
+import {projectCheck} from './quality.mjs?v=6.2.0';
 import {fpsStarter} from './game-scaffold.mjs?v=6.1.0';
 export class Workspace extends BaseWorkspace {
   async tool(name,args={}) {
@@ -27,6 +27,28 @@ export class Workspace extends BaseWorkspace {
       const syntax=await crossScriptSyntax(this,this.signal);
       const syntaxIssues=syntax.performed?syntax.checks.filter(c=>!c.passed).map(c=>'Klassiska scripts i '+c.page+': '+c.error):[];
       return {...base,passed:base.passed&&!syntaxIssues.length,issues:[...base.issues,...syntaxIssues],syntax};
+    }
+    if(name==='patch_files') {
+      const edits=args.edits;
+      if(!Array.isArray(edits)||edits.length<1||edits.length>6)throw new Error('patch_files kräver 1–6 versionskontrollerade ändringar.');
+      const changed=new Map(),seen=new Set();
+      for(const edit of edits){
+        if(!edit||typeof edit!=='object'||Array.isArray(edit))throw new Error('Varje ändring måste vara ett objekt.');
+        const path=filename(edit.name),old=this.files.get(path);
+        if(!old)throw new Error('Filen finns inte: '+path);
+        if(seen.has(path))throw new Error('Samma fil får bara ändras en gång i en transaktion: '+path);seen.add(path);
+        if(!Number.isInteger(edit.expected_version)||edit.expected_version!==old.version)throw new Error('Versionskonflikt: '+path+'. Läs version '+old.version+' igen.');
+        if(typeof edit.find!=='string'||!edit.find.length||typeof edit.replace!=='string')throw new Error('Kräver icke-tom find och text i replace.');
+        const i=old.content.indexOf(edit.find);
+        if(i<0||old.content.indexOf(edit.find,i+1)>=0)throw new Error('find måste matcha exakt en gång i '+path);
+        const next=old.content.slice(0,i)+edit.replace+old.content.slice(i+edit.find.length),bytes=new TextEncoder().encode(next).length;
+        if(bytes>100000)throw new Error('Filen är större än 100 kB: '+path);
+        changed.set(path,{name:path,content:next,version:old.version+1,bytes});
+      }
+      const next=new Map(this.files);for(const [path,file] of changed)next.set(path,file);
+      if([...next.values()].reduce((n,f)=>n+f.bytes,0)>500000)throw new Error('Arbetsytans maximala storlek är 500 kB.');
+      this.files=next;for(const file of changed.values())this.emit('file',file);
+      return {patched:true,versions:[...changed.values()].map(({name,version,bytes})=>({name,version,bytes})),count:changed.size};
     }
     if(['append_file','edit_file'].includes(name)) {
       const file=this.files.get(filename(args.name));if(!file)throw new Error('Filen finns inte.');

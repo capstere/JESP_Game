@@ -1,0 +1,80 @@
+name: JESP v6.2 gated real agent release
+on:
+  push:
+    branches: [fix/agent-v62-contracts-rollback]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: jesp-v62-real
+  cancel-in-progress: true
+jobs:
+  regression_and_browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 9
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Full deterministic tests, simulated model only where needed
+        run: node --test tests/agent-unit.mjs tests/reasoning-v51.mjs tests/cap-v51.mjs tests/progress-v511.mjs tests/quality-v52.mjs tests/snapshot-v52.mjs tests/protocol-recovery-v52.mjs tests/backend-v6.mjs tests/backend-hardening-v6.mjs tests/backend-escalation-v6.mjs tests/backend-budget-v6.mjs tests/backend-argument-guard-v6.mjs tests/final-review-v601.mjs tests/arguments-v601.mjs tests/controller-v601.mjs tests/verification-v610.mjs tests/requirements-v62.mjs
+      - name: Install fixed browser test runtime
+        run: |
+          npm install --no-save --package-lock=false playwright@1.56.1
+          npx playwright install chromium
+      - name: Real Chromium harness security checks
+        run: node tests/browser-verification-v610.mjs
+      - name: Real Chromium FPS starter behavior (not model inference)
+        run: node tests/fps-scaffold-browser-v611.mjs
+  real_agent:
+    needs: regression_and_browser
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        case: [optimization, fps]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Prepare immutable commit evidence and browser
+        run: |
+          mkdir -p release-v62-evidence
+          git rev-parse HEAD > release-v62-evidence/commit.txt
+          npm install --no-save --package-lock=false playwright@1.56.1
+          npx playwright install chromium
+      - name: REAL anonymous independent acceptance (no fake model replies)
+        id: acceptance
+        env:
+          CASE: ${{ matrix.case }}
+        run: |
+          if [ "$CASE" = optimization ]; then node tests/agent-optimization-v6.mjs; else node tests/backend-hardened-live-v6.mjs; fi
+      - name: Record actual acceptance verdict
+        if: always()
+        env:
+          CASE: ${{ matrix.case }}
+          RESULT: ${{ steps.acceptance.outcome }}
+        run: |
+          python3 - <<'PY'
+          import os,json
+          from pathlib import Path
+          Path('release-v62-evidence/result.json').write_text(json.dumps({'case':os.environ['CASE'],'outcome':os.environ['RESULT'],'mocked_inference':False},indent=2))
+          PY
+      - name: Preserve real browser evidence including failures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: v62-${{ matrix.case }}
+          path: |
+            release-v62-evidence/
+            optimization-agent-evidence/
+            backend-hardened-evidence/
+          retention-days: 7
