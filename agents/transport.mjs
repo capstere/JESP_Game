@@ -1,4 +1,4 @@
-import {backendAsk,DEFAULT_WORKER,DEFAULT_CRITIC} from './backend.mjs?v=6.2.0';
+import {backendAsk,DEFAULT_WORKER,DEFAULT_CRITIC} from './backend.mjs?v=6.3.0';
 import {AI as ProviderAI,pause,check} from './runtime.mjs?v=5.1.1';
 export function transientDelay(error,attempt) {
  if(![500,502,503,504].includes(error?.status)||attempt>=2)return null;
@@ -8,7 +8,7 @@ export function transientDelay(error,attempt) {
 }
 // Retry only transient server errors. No new provider/account, no quota bypass.
 export class AI extends ProviderAI {
- constructor(options={}){super(options);this.workerModel=options.workerModel||DEFAULT_WORKER;this.criticModel=options.criticModel||DEFAULT_CRITIC;}
+ constructor(options={}){super(options);this.workerModel=options.workerModel||DEFAULT_WORKER;this.criticModel=options.criticModel||DEFAULT_CRITIC;this.liveStream=options.liveStream===true;this.onToken=typeof options.onToken==='function'?options.onToken:()=>{};}
  async requestOnce(...args){return super.ask(...args);}
  async wait(ms,signal){return pause(ms,signal);}
  async ask(messages,signal,maxTokens,tools) {

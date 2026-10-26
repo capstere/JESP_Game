@@ -1,0 +1,48 @@
+name: JESP 6.3 streamed agent browser integration
+on:
+  push:
+    branches: [feat/colibri-live-stream-v63]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: jesp-v63-provider-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Run SSE parser and gateway unit tests
+        run: node --test tests/live-stream-v63.mjs tests/stream-gateway-v63.mjs
+      - name: Install isolated Chromium test runtime
+        run: |
+          npm install --no-save --package-lock=false playwright@1.56.1
+          npx playwright install chromium
+      - name: Verify actual browser SSE opt-in, safe failure, and old JSON path
+        run: node tests/live-ui-v63.mjs
+
+  live_provider:
+    needs: browser
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Genuine anonymous no-login SSE model inference
+        run: node tests/live-stream-real-v63.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: v63-live-sse-evidence
+          path: stream-evidence/
