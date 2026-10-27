@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {requestSpecialist} from '../agents/specialist-request.mjs';
+import {requestSpecialist,normalizeAdviceText} from '../agents/specialist-request.mjs';
+import {decodeAdvice,Workspace} from '../agents/agent-boost.mjs';
 test('specialist transport state is isolated from worker protocol and token preview',async()=>{
  let calls=0,tokenCalls=0;const cap=new Set(['worker']);
  const ai={calls:5,role:'repair',jsonProtocol:true,backendEffortCaps:cap,onToken:()=>tokenCalls++,async ask(){calls++;this.calls++;assert.equal(this.role,'critic');assert.equal(this.jsonProtocol,false);assert.equal(this.backendEffortCaps,undefined);this.jsonProtocol=true;this.onToken('partial');return{model:'free',text:'ok'};}};
@@ -19,4 +20,18 @@ test('persistent invalid proposals stop at two, retaining diagnostics and reques
 test('quota failure is not a format correction opportunity',async()=>{
  const ai={calls:0,async ask(){this.calls++;const e=Error('quota');e.status=429;throw e;}};
  await assert.rejects(requestSpecialist({ai,context:{},tool:{},decode:x=>x}),e=>e.status===429);assert.equal(ai.calls,1);
+});
+test('JSON-encoded arrays are normalized without changing advice content or evidence',()=>{
+ const w=new Workspace({question:'repair',signal:new AbortController().signal});w.write('x.js','const x=1;');
+ const expected={diagnosis:'Bug in source',evidence:['file:x.js@v1'],changes:[{file:'x.js',change:'Repair it'}],tests:['Check required behavior']};
+ const raw={...expected,evidence:JSON.stringify(expected.evidence),changes:JSON.stringify(expected.changes),tests:JSON.stringify(expected.tests)};
+ const n=normalizeAdviceText(JSON.stringify({kind:'actions',actions:[{tool:'submit_advice',args:raw}]}));
+ assert.equal(n.normalizations.length,3);assert.deepEqual(decodeAdvice(n.text,w),{...expected,advisory:true});
+ assert.equal(n.shape.evidence.type,'string');
+});
+test('single explicit evidence is accepted but plain prose, invalid arrays and fabricated versions are not',()=>{
+ const w=new Workspace({question:'repair',signal:new AbortController().signal});w.write('x.js','const x=1;');
+ const good={diagnosis:'Bug',evidence:'file:x.js@v1',changes:[],tests:[]};
+ assert.equal(decodeAdvice(normalizeAdviceText(JSON.stringify(good)).text,w).evidence.length,1);
+ for(const value of [{...good,evidence:'probably in a file'},{...good,evidence:'file:x.js@v999'},{...good,changes:'{"file":"x.js","change":"bad"}'},{...good,tests:'not a JSON array'}])assert.throws(()=>decodeAdvice(normalizeAdviceText(JSON.stringify(value)).text,w));
 });
