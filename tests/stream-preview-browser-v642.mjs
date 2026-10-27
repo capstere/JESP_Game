@@ -49,7 +49,7 @@ async function setup({stream,controlled=false,pausedFrames=false}={}){
   };
  });
  await page.goto(origin,{waitUntil:'domcontentloaded'});
- await page.waitForFunction(()=>window.JESP_AGENT_BOOTED&&!document.getElementById('run').disabled,null,{timeout:10000});
+ await page.waitForFunction(()=>window.JESP_AGENT_BOOTED&&!document.getElementById('run').disabled,null,{timeout:10000,polling:25});
  await page.locator('#settings summary').click();
  await page.evaluate(()=>{
   const pre=document.getElementById('livePreview'),descriptor=Object.getOwnPropertyDescriptor(Node.prototype,'textContent');
@@ -59,7 +59,7 @@ async function setup({stream,controlled=false,pausedFrames=false}={}){
  return {page,requests,errors};
 }
 async function start(page,stream=true){if(stream)await page.locator('#liveStream').check();await page.locator('#test').click();}
-async function success(page){await page.waitForFunction(()=>!document.getElementById('test').disabled&&document.getElementById('status').classList.contains('success'),null,{timeout:10000});}
+async function success(page){await page.waitForFunction(()=>!document.getElementById('test').disabled&&document.getElementById('status').classList.contains('success'),null,{timeout:10000,polling:25});}
 function passed(name){report.cases.push({name,passed:true});}
 try{
  const tokens=Array.from({length:1000},(_,i)=>i%2?'å':'x');
@@ -119,6 +119,11 @@ try{
   }
  }
  console.log('STREAM_PREVIEW_BROWSER',JSON.stringify(report));
+}catch(error){
+ report.error=String(error);
+ report.diagnostics=[];
+ for(const context of browser.contexts())for(const page of context.pages())try{report.diagnostics.push(await page.evaluate(()=>({status:document.getElementById('status')?.textContent,phase:document.getElementById('livePhase')?.textContent,previewWrites:window.__previewWrites,answer:document.getElementById('answer')?.textContent?.slice(0,200)})));}catch{}
+ throw error;
 }finally{
  mkdirSync('preview-evidence',{recursive:true});writeFileSync('preview-evidence/browser.json',JSON.stringify(report,null,2));await browser.close();
 }
