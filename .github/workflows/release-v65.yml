@@ -2,7 +2,6 @@ name: JESP 6.5 general agent support acceptance
 on:
   push:
     branches: [feat/general-agent-support-v65]
-    paths: ['agents/**', 'tests/**', 'tools/enable_agent_boost_v65.py', 'index.html', '.github/workflows/release-v65.yml']
   workflow_dispatch:
 permissions:
   contents: read
@@ -10,45 +9,28 @@ concurrency:
   group: jesp-v65-release
   cancel-in-progress: true
 jobs:
-  prepare:
-    runs-on: ubuntu-latest
-    timeout-minutes: 4
-    permissions:
-      contents: write
-    outputs:
-      sha: ${{ steps.commit.outputs.sha }}
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-      - name: Apply guarded browser and core changes
-        run: |
-          python3 tools/enable_agent_boost_v65.py
-          node --check agents/app.mjs
-          node --test tests/agent-boost-v65.mjs
-      - id: commit
-        name: Commit exact derived source without force-pushing
-        run: |
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add agents/core.mjs agents/app.mjs index.html
-          if ! git diff --cached --quiet; then git commit -m 'Wire tested v6.5 expert support and safe restart UI [skip ci]'; git push origin HEAD:feat/general-agent-support-v65; fi
-          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
   unit_and_browser:
-    needs: prepare
     runs-on: ubuntu-latest
     timeout-minutes: 8
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ needs.prepare.outputs.sha }}
           persist-credentials: false
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Existing suite and new deterministic regressions (mock AI)
-        run: node --test tests/agent-unit.mjs tests/reasoning-v51.mjs tests/cap-v51.mjs tests/progress-v511.mjs tests/quality-v52.mjs tests/snapshot-v52.mjs tests/protocol-recovery-v52.mjs tests/backend-v6.mjs tests/backend-hardening-v6.mjs tests/backend-escalation-v6.mjs tests/backend-budget-v6.mjs tests/backend-argument-guard-v6.mjs tests/final-review-v601.mjs tests/arguments-v601.mjs tests/controller-v601.mjs tests/verification-v610.mjs tests/requirements-v62.mjs tests/evidence-first-v64.mjs tests/reviewer-v641.mjs tests/live-stream-v63.mjs tests/stream-gateway-v63.mjs tests/agent-boost-v65.mjs
+      - name: Save exact source for review and reproducibility
+        run: |
+          mkdir -p candidate-source
+          git archive HEAD | gzip > candidate-source/source.tar.gz
+          git rev-parse HEAD > candidate-source/commit.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: v65-candidate-source
+          path: candidate-source/
+          retention-days: 7
+      - name: Existing and new deterministic regressions (model responses simulated)
+        run: node --test tests/agent-unit.mjs tests/reasoning-v51.mjs tests/cap-v51.mjs tests/progress-v511.mjs tests/quality-v52.mjs tests/snapshot-v52.mjs tests/protocol-recovery-v52.mjs tests/backend-v6.mjs tests/backend-hardening-v6.mjs tests/backend-escalation-v6.mjs tests/backend-budget-v6.mjs tests/backend-argument-guard-v6.mjs tests/final-review-v601.mjs tests/arguments-v601.mjs tests/controller-v601.mjs tests/verification-v610.mjs tests/requirements-v62.mjs tests/evidence-first-v64.mjs tests/reviewer-v641.mjs tests/live-stream-v63.mjs tests/stream-gateway-v63.mjs tests/agent-boost-v65.mjs tests/advice-recovery-v65.mjs tests/advice-slots-v65.mjs
       - run: |
           npm install --no-save --package-lock=false playwright@1.56.1
           npx playwright install chromium
@@ -60,13 +42,12 @@ jobs:
           name: v65-ui-evidence
           path: boost-evidence/
   real_agent:
-    needs: [prepare, unit_and_browser]
+    needs: unit_and_browser
     runs-on: ubuntu-latest
     timeout-minutes: 16
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ needs.prepare.outputs.sha }}
           persist-credentials: false
       - uses: actions/setup-node@v4
         with:
