@@ -112,7 +112,8 @@ try{
   }
   {
    const {page,requests,errors}=await setup();assert.equal(await page.locator('#liveStream').isChecked(),false);
-   assert.match(await page.locator('#status').innerText(),/Version 6\.4\.2/);
+   const expectedVersion=readFileSync(resolve(root,'agents/core.mjs'),'utf8').match(/export const VERSION='([^']+)'/)[1];
+   assert.ok((await page.locator('#status').innerText()).includes('Version '+expectedVersion));
    await start(page,false);await success(page);
    assert.equal(await page.locator('#answer').innerText(),'12');assert.equal(requests.length,1);assert.equal(requests[0].kind,'json');
    assert.deepEqual(errors,[]);passed('JSON remains default; startup version matches actual release');await page.close();
