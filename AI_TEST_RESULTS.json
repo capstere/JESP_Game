@@ -1,48 +1,19 @@
 {
-  "version": "6.2.0-candidate",
-  "date": "2026-10-23",
+  "version": "6.5.0",
   "model_weights_changed": false,
-  "deterministic_tests": {
-    "passed": 188,
-    "model_responses": "simulated where required"
-  },
-  "historical_live_acceptance": {
-    "run_id": 39957120004,
-    "checks": 28,
-    "result": "passed for code; final prose comparison was wrong and now has a dedicated review gate"
-  },
-  "current_live_acceptance": "See latest release-v601 artifacts; real outcomes remain pending until completed.",
   "no_login": true,
   "paid_fallback": false,
   "unlimited_capacity_claimed": false,
-  "prior_v601_acceptance": {
-    "run_id": 40025348227,
-    "result": "failed",
-    "optimization": "Correct computed solutions but tester assumed a different JSON shape; critic also introduced extra unverified prose.",
-    "fps": "Initial-target shot failed and code-test argument encoding consumed the decision budget."
+  "release_evidence": {
+    "workflow": ".github/workflows/release-v65.yml",
+    "unit_and_browser": "Read exact-SHA workflow verdict; model replies simulated in unit/UI cases",
+    "real_agent": "Anonymous interval repair, 81 external assertions and a read-only specialist response",
+    "artifacts": ["v65-candidate-source", "v65-ui-evidence", "v65-real-agent-evidence"]
   },
-  "prior_v601_attempt2": {
-    "run_id": 40028192842,
-    "result": "failed",
-    "detail": "Worker truncation incorrectly reduced reflective effort for all later roles. Both tasks exhausted their budget in repeated tests; FPS also had a script declaration collision and missing window references."
+  "published_evidence": {
+    "workflow": ".github/workflows/published-v65.yml",
+    "artifact": "jesp-published-proof",
+    "requirements": "Published file hashes match deployed commit; real browser AI response without auth or source replacement"
   },
-  "released": false,
-  "merge_gate": {
-    "deterministic": "run latest PR checks",
-    "optimization": "pending real no-login 28-case check",
-    "fps": "pending real isolated browser gameplay check",
-    "published": "not deployed"
-  },
-  "changes": [
-    "preserve original user acceptance requirements when AI strategy invents contrary scoring",
-    "rollback edits that regress passing independent tests",
-    "atomic patch_files with version/uniqueness checks",
-    "route architect through catalog-listed strong free review model"
-  ],
-  "historical_last_v61": {
-    "run_id": 40204300031,
-    "optimization": "passed",
-    "fps": "failed (14m timeout)",
-    "do_not_treat_as_v62_evidence": true
-  }
+  "note": "This manifest describes checks, not their outcome. Use the workflow result and tested commit in each artifact; do not infer success from this file."
 }

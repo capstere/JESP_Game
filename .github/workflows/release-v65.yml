@@ -30,17 +30,23 @@ jobs:
           path: candidate-source/
           retention-days: 7
       - name: Existing and new deterministic regressions (model responses simulated)
-        run: node --test tests/agent-unit.mjs tests/reasoning-v51.mjs tests/cap-v51.mjs tests/progress-v511.mjs tests/quality-v52.mjs tests/snapshot-v52.mjs tests/protocol-recovery-v52.mjs tests/backend-v6.mjs tests/backend-hardening-v6.mjs tests/backend-escalation-v6.mjs tests/backend-budget-v6.mjs tests/backend-argument-guard-v6.mjs tests/final-review-v601.mjs tests/arguments-v601.mjs tests/controller-v601.mjs tests/verification-v610.mjs tests/requirements-v62.mjs tests/evidence-first-v64.mjs tests/reviewer-v641.mjs tests/live-stream-v63.mjs tests/stream-gateway-v63.mjs tests/agent-boost-v65.mjs tests/advice-recovery-v65.mjs tests/advice-slots-v65.mjs
+        run: node --test tests/agent-unit.mjs tests/reasoning-v51.mjs tests/cap-v51.mjs tests/progress-v511.mjs tests/quality-v52.mjs tests/snapshot-v52.mjs tests/protocol-recovery-v52.mjs tests/backend-v6.mjs tests/backend-hardening-v6.mjs tests/backend-escalation-v6.mjs tests/backend-budget-v6.mjs tests/backend-argument-guard-v6.mjs tests/final-review-v601.mjs tests/arguments-v601.mjs tests/controller-v601.mjs tests/verification-v610.mjs tests/requirements-v62.mjs tests/evidence-first-v64.mjs tests/reviewer-v641.mjs tests/live-stream-v63.mjs tests/stream-gateway-v63.mjs tests/agent-boost-v65.mjs tests/advice-slots-v65.mjs tests/stream-preview-v642.mjs
       - run: |
           npm install --no-save --package-lock=false playwright@1.56.1
           npx playwright install chromium
-      - name: Actual browser import/export, no file execution, permissions reset
-        run: node tests/boost-browser-v65.mjs
+      - name: Actual browser restart safety and preserved streaming behavior
+        run: |
+          node tests/boost-browser-v65.mjs
+          node tests/stream-preview-browser-v642.mjs
+          node tests/live-ui-v63.mjs
+          node tests/browser-verification-v610.mjs
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: v65-ui-evidence
-          path: boost-evidence/
+          path: |
+            boost-evidence/
+            preview-evidence/
   real_agent:
     needs: unit_and_browser
     runs-on: ubuntu-latest

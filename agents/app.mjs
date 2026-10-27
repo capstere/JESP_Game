@@ -1,3 +1,4 @@
+import {createStreamPreview} from './stream-preview.mjs?v=6.4.2';
 import {encodeCheckpoint,restoreCheckpoint} from './agent-boost.mjs?v=6.5.0';
 import {backendModels,DEFAULT_WORKER,DEFAULT_CRITIC} from './backend.mjs?v=6.3.0';
 import {AI,Workspace,runAgent,freeModels,VERSION,check} from './core.mjs?v=6.5.0';
@@ -43,15 +44,15 @@ function appendLiveEvent(message,kind='work'){
  panel.append(li);while(panel.children.length>70)panel.firstElementChild.remove();
  panel.scrollTop=panel.scrollHeight;
 }
-function liveToken(token,{role,model}={}){
- const pre=$('livePreview');if(!pre||!token)return;
- if(role&&pre.dataset.role&&role!==pre.dataset.role){pre.textContent='';}
- if(role)pre.dataset.role=role;
- pre.textContent=(pre.textContent+String(token)).slice(-6000);
- pre.scrollTop=pre.scrollHeight;
+const preview=createStreamPreview({render(text,{role,model}){
+ const pre=$('livePreview');if(!pre)return;
+ const follow=pre.scrollHeight-pre.scrollTop-pre.clientHeight<=32;
+ if(pre.textContent!==text){pre.textContent=text;if(follow)pre.scrollTop=pre.scrollHeight;}
+ pre.dataset.role=role||'';
  if(model)$('liveRole').textContent=(roleLabel[role]||role||'AI')+' · '+model;
- $('livePhase').textContent='Mottar live-text från AI-modellen. Utkastet är inte verifierat.';
-}
+ if(text)$('livePhase').textContent='Mottar live-text från AI-modellen. Utkastet är inte verifierat.';
+}});
+function liveToken(token,meta){preview.append(token,meta);}
 function emit(type,data){
  if(type==='stage'){for(const el of document.querySelectorAll('[data-stage]'))el.classList.toggle('active',el.dataset.stage===data.stage);if(data.step)status(`Agentbeslut ${data.step}/${data.maxSteps}…`);else status('Separat granskning…');}
  if(type==='contract'){
@@ -75,15 +76,17 @@ function emit(type,data){
   if(data.type==='ai_start'){
    const role=roleLabel[data.role]||data.role||'AI';
    $('liveRole').textContent=role;
-   $('livePreview').textContent='';$('livePreview').dataset.role=data.role||'';
+   preview.reset({role:data.role||''});
    $('livePhase').textContent='AI-anrop pågår: '+role+(settings.liveStream?' · SSE-streaming aktiverad':' · väntar på fullständigt svar');
    appendLiveEvent(role+' påbörjade ett modell-anrop',data.role==='critic'?'review':'work');
   }
   if(data.type==='ai_end'){
+   preview.flush();
    $('livePhase').textContent='Modellsvaret mottaget. Nästa steg: validera verktyg och resultat.';
    appendLiveEvent((roleLabel[data.role]||data.role||'AI')+' svarade med '+String(data.model||'modell')+(data.truncated?' (avklippt)':''),data.truncated?'error':'work');
   }
   if(data.type==='ai_error'||data.type==='run_stopped'){
+   preview.flush();
    $('livePhase').textContent='AI-anropet avbröts eller misslyckades. Ett ofullständigt svar körs inte.';
    appendLiveEvent(String(data.message||data.error?.message||'AI-fel'),'error');
   }
@@ -91,7 +94,7 @@ function emit(type,data){
  if(type==='trace'&&data.type.startsWith('expert_')){appendLiveEvent(data.type==='expert_start'?'Specialist granskar återkommande fel':data.type==='expert_end'?'Specialistförslag mottaget – ej verifierat':'Specialist kunde inte lämna råd','review');log('Specialist: '+data.type,data);}
  if(type==='trace')controls();
  if(type==='trace'&&['ai_start','ai_end','ai_error','finish_blocked','run_stopped','strategy','strategy_error'].includes(data.type))log('Körspår: '+data.type,data);
- if(type==='done'){appendLiveEvent(data.unfinished?'Körningen är ofullständig':'Körningen har avslutats',data.unfinished?'error':'review');$('livePhase').textContent=data.unfinished?'Ofullständig agentkörning. Delresultaten finns kvar.':'Agentkörningen avslutad. Kontrollera granskning och filer.';result=data;$('answer').textContent=data.answer;$('answerNote').textContent=(data.unfinished?'Ofullständigt uppdrag. ':'')+(data.reviewPassed?'Separat AI-granskning godkände aktuell leverans; ingen korrekthetsgaranti.':data.reviewed?'Granskning utförd, men slutleveransen är inte godkänd.':'Ingen godkänd separat AI-granskning.');$('issues').textContent=(data.issues||[]).join('\n');}
+ if(type==='done'){preview.flush();appendLiveEvent(data.unfinished?'Körningen är ofullständig':'Körningen har avslutats',data.unfinished?'error':'review');$('livePhase').textContent=data.unfinished?'Ofullständig agentkörning. Delresultaten finns kvar.':'Agentkörningen avslutad. Kontrollera granskning och filer.';result=data;$('answer').textContent=data.answer;$('answerNote').textContent=(data.unfinished?'Ofullständigt uppdrag. ':'')+(data.reviewPassed?'Separat AI-granskning godkände aktuell leverans; ingen korrekthetsgaranti.':data.reviewed?'Granskning utförd, men slutleveransen är inte godkänd.':'Ingen godkänd separat AI-granskning.');$('issues').textContent=(data.issues||[]).join('\n');}
 }
 function explain(e){
  if(e.name==='AbortError')return 'Avbrutet. Skapade filer och mottagna resultat finns kvar.';
@@ -109,6 +112,7 @@ async function run(test=false,resume=false){
  if(!input){status('Skriv ett uppdrag först.');$('prompt').focus();return;}
  if($('provider').value==='local'&&!$('downloadConsent').checked){status('Godkänn modellnedladdningen i inställningarna först.','error');$('settings').open=true;return;}
  if(resume&&(settings.advanced!==$('advanced').checked||settings.mode!==$('taskMode').value)){status('Behåll samma arbetssätt och uppdragstyp när du fortsätter, eller starta ett nytt uppdrag.','error');return;}
+ preview.reset();
  question=input;controller=new AbortController();const signal=controller.signal;busy=true;result=null;
  settings={workerModel:$('workerModel').value,criticModel:$('criticModel').value,advanced:$('advanced').checked,mode:$('taskMode').value,provider:$('provider').value,model:$('model').value,reasoning:$('reasoning').value,maxSteps:Number($('steps').value),web:$('web').checked,review:$('review').checked,allowCode:$('code').checked,expertAssist:$('expertAssist').checked,liveStream:$('provider').value==='backend'&&$('liveStream').checked};
  if(resume){space.signal=signal;space.web=settings.web;space.allowCode=settings.allowCode;space.offline.clear();space.lastError=null;}else space=new Workspace({signal,emit,web:settings.web,allowCode:settings.allowCode,execute:executeJS,question});
@@ -119,7 +123,7 @@ async function run(test=false,resume=false){
  try{
   if(test){const answer=await ai.ask([{role:'user',content:input}],signal,64);check(signal);space.totalCalls=ai.calls;space.trace.push({type:'connection_test',model:answer.model,calls:ai.calls,requestedReasoning:ai.reasoning});emit('done',{answer:answer.text,reviewed:false,reviewPassed:false,unfinished:false,calls:ai.calls,model:answer.model});emit('model',{model:answer.model,calls:ai.calls});status('Ett riktigt AI-svar mottogs. Detta testar anslutningen, inte hela agenten.','success');}
   else{result=await runAgent({question,ai,space,signal,maxSteps:Number($('steps').value),review:$('review').checked,advanced:settings.advanced,mode:settings.mode,verifyBehavior:true,expertAssist:settings.expertAssist,emit});status(result.unfinished?'Uppdraget är ofullständigt. Se kvarvarande problem eller tryck Fortsätt.':'Leveranskontrollen är klar. Kontrollera resultat och filer.',result.unfinished?'warning':'success');}
- }catch(e){space.lastError={name:e.name,message:e.message,status:e.status||null,time:new Date().toISOString()};space.trace.push({type:'ui_error',...space.lastError});$('livePhase').textContent='AI-strömmen eller körningen stoppades innan validerat slutresultat. Ett ofullständigt svar körs inte.';appendLiveEvent('Körningen stoppades: '+String(e.message||e).slice(0,180),'error');status(explain(e),e.name==='AbortError'?'':'error');log('Körningen stoppades',String(e.message||e),'error');$('answerNote').textContent='Ofullständig körning. Resultat och filer som redan skapats har behållits.';}
+ }catch(e){preview.flush();space.lastError={name:e.name,message:e.message,status:e.status||null,time:new Date().toISOString()};space.trace.push({type:'ui_error',...space.lastError});$('livePhase').textContent='AI-strömmen eller körningen stoppades innan validerat slutresultat. Ett ofullständigt svar körs inte.';appendLiveEvent('Körningen stoppades: '+String(e.message||e).slice(0,180),'error');status(explain(e),e.name==='AbortError'?'':'error');log('Körningen stoppades',String(e.message||e),'error');$('answerNote').textContent='Ofullständig körning. Resultat och filer som redan skapats har behållits.';}
  finally{busy=false;controller=null;for(const el of document.querySelectorAll('[data-stage]'))el.classList.remove('active');controls();}
 }
 $('saveCheckpoint').onclick=()=>{if(busy||!space)return;try{download('JESP_aterstart.json',encodeCheckpoint(space,question));status('Återstartfil sparad. Den innehåller ditt uppdrag och koden i klartext.','success');}catch(e){status(e.message,'error');}};
@@ -130,7 +134,7 @@ $('checkpointFile').onchange=async()=>{
  try{
   if(file.size>1200000)throw Error('Återstartfilen är för stor.');
   const restored=restoreCheckpoint(await file.text(),{signal:new AbortController().signal,emit,execute:executeJS});
-  space=restored.space;question=restored.question;result={unfinished:true};
+  preview.reset();space=restored.space;question=restored.question;result={unfinished:true};
   $('prompt').value=question;$('code').checked=false;$('web').checked=false;$('advanced').checked=true;$('taskMode').value='auto';
   settings={advanced:true,mode:'auto'};
   for(const id of ['answer','issues','log','files','sources','plan','contract','liveTimeline','livePreview'])$(id).replaceChildren();
@@ -141,7 +145,7 @@ $('checkpointFile').onchange=async()=>{
  finally{busy=false;$('checkpointFile').value='';controls();}
 };
 $('run').onclick=()=>run();$('test').onclick=()=>run(true);$('continue').onclick=()=>run(false,true);
-$('cancel').onclick=()=>{controller?.abort(new DOMException('Avbrutet av användaren','AbortError'));status('Avbryter…');controls();};
+$('cancel').onclick=()=>{preview.flush();controller?.abort(new DOMException('Avbrutet av användaren','AbortError'));status('Avbryter…');controls();};
 $('prompt').addEventListener('keydown',e=>{if((e.ctrlKey||e.metaKey)&&e.key==='Enter'){e.preventDefault();run();}});
 $('provider').onchange=()=>{$('backendSettings').hidden=$('provider').value!=='backend';controls();$('localNote').hidden=$('provider').value!=='local';$('kiloSettings').hidden=$('provider').value!=='kilo';if($('provider').value!=='local')unloadLocal();};
 $('checkKilo').onclick=async()=>{

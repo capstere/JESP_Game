@@ -1,30 +1,25 @@
 # JESP AI 6.5 — specialiststöd och återstartbara uppdrag
 
-## Vad målet betyder
-
-Den här uppgraderingen förstärker agentens arbetsmiljö. Den tränar inte nya modellvikter, ger inte obehörig åtkomst till GPT Luna/Sol och hävdar inte likvärdig generell prestanda. JESP använder fortfarande användarens val av katalogkontrollerade gratismodeller via befintlig backend; inga nya konton, API-nycklar, betalvägar eller kvotförändringar införs.
-
 ## Nya funktioner
 
-**Läsande felsökningsspecialist.** Om samma blockerande fel finns kvar vid två reparationsbeslut får en separat, avgränsad modellkontext granska uppdraget, aktuella filutdrag och testfel. Högst två konsultationer per körning. Den använder den redan valda granskningsmodellen. Befintliga transportåterförsök kan ge fler HTTP-försök; kvoter gäller som tidigare. Rådet måste hänvisa till befintliga filer/loggar, sparas separat och kan aldrig ändra filer, testfacit, behörigheter eller ett godkännandebeslut. Ändrade filversioner gör det gamla rådet inaktuellt. Råd är förslag, inte fakta eller bevis.
+**Läsande felsökningsspecialist.** När samma fel återkommer i två reparationsbeslut kan en separat, kort modellkontext ge en diagnos med hänvisningar till aktuella filer och testloggar. Högst två konsultationer per körning, med en formatkorrigering per konsultation. Samma katalogkontrollerade gratis granskningsmodell används. Rådet kan inte ändra filer, tester, behörigheter eller godkänna en leverans. Ändrade filversioner gör gammalt råd inaktuellt.
 
-**Sökning i arbetsfiler.** Verktyget `search_files` söker en bokstavlig text i befintliga filer och ger radnummer, version och utdrag. Högst 30 matchningar visas; totalantal och eventuell avkortning anges. Ingen regex, nätverkstrafik eller kodkörning. Ett begränsat reparationsläge får inte extra verktyg som dess styrning förbjuder.
+**Sökning i arbetsfiler.** `search_files` söker bokstavlig text med exakta radnummer och aktuella versioner. Högst 30 träffar visas, med totalantal och avkortningsmarkering. Ingen regex, kodkörning eller nätverkstrafik. Sökning erbjuds bara där arbetsfasen redan tillåter läsning.
 
-**Återstart från disk.** Spara `JESP_aterstart.json` och öppna den senare med knappen Öppna återstartfil. Den sparar uppdrag och källfiler i klartext. Ingen automatisk serverlagring. Tidigare godkännanden, testresultat, modeller och behörigheter importeras inte som betrodda. Kodkörning och webbsökning är av efter import och måste uttryckligen väljas igen. Ny planering och verifiering görs vid Fortsätt. Den vanliga ZIP-exporten innehåller också `aterstart.json`.
+**Återstart från disk.** Spara `JESP_aterstart.json` och öppna den senare med **Öppna återstartfil**. Filen sparar uppdrag och källkod i klartext. Behörigheter, modeller, testresultat och gamla godkännanden importeras inte. Kodkörning och webbsökning är av efter import och måste godkännas igen. Ny planering och verifiering görs vid **Fortsätt**. ZIP-exporten innehåller också `aterstart.json`.
 
-## Varför detta i stället för en obegränsad agentflotta?
+## Rättningar från verkliga prov
 
-Specialister får egen kort kontext, men extra modellkörningar ökar latens och kvotförbrukning. Därför används de vid upprepade problem, inte för varje fråga. Arbetsfiler, källor och råd är fortfarande opålitliga data. Slutgranskaren och körda tester bestämmer vad som får godkännas, inte specialistens säkerhet i formuleringarna.
+Specialistmodellen gav först tolv testförslag trots en listgräns. Den får nu tre namngivna textfält som omvandlas till en lista utan att något råd tappas bort. Blandade format och gamla överlånga listor avvisas fortfarande. Källreferenser och ändringsfilnamn begränsas i anropsschemat till faktiskt tillgängliga filversioner/loggar. Ett separat valideringssteg avvisar fortfarande felaktiga referenser, även om modellen ignorerar schemat. Ogiltiga förslag loggas tillsammans med de tillåtna referenserna.
 
-Utvecklingsunderlag:
-- https://www.anthropic.com/research/effective-harnesses-for-long-running-agents — inkrementellt arbete, återupptagning och verkliga tester.
-- https://www.anthropic.com/research/multi-agent-research-system — avgränsade underagenter och avvägningen mot tokenförbrukning; resultaten gäller deras system, inte JESP.
-- https://openai.com/index/introducing-gpt-6-1-sol/ — officiell modell- och prisinformation. Ingen åtkomst till Sol införs av denna ändring.
+Den publicerade 6.4.2-optimeringen är bevarad: bildrutesamlad, begränsad textförhandsvisning, bevarad scrollposition, fullständigt slutsvar och återställning mellan anrop. En importerad arbetsyta tömmer även väntande förhandsvisning.
 
-## Kontrollera bevis, inte versionsnumret
+## Vad detta inte lovar
 
-`tests/agent-boost-v65.mjs` testar gränser, oföränderlig arbetsyta under rådgivning, evidensreferenser, kvotfel, sökning och säkra återstarter. Dessa tester använder simulerade modellresponser.
+Ingen omträning av modeller, ingen verifierad likvärdighet med Luna/Sol och ingen obegränsad kapacitet. Extra konsultationer kostar gratisanrop och tid. Råd är förslag, inte bevis. Befintliga kvoter, sandbox, säkerhetskontroller, gratisfilter och krav på godkända tester kvarstår. Inga nya användarkonton, nycklar eller betalreserver.
 
-`tests/boost-browser-v65.mjs` testar faktisk Chromium-UI med simulerad modellkatalog i standardläget. `LIVE=1` använder riktiga anonyma modell-anrop: reparerar en felaktig intervallfunktion, granskar resultatet, kör 40 extra fall och en separat kontroll av att resultatet inte delar muterbara indata, samt hämtar ett verkligt läsande specialistförslag. Modellkod exekveras enbart i den befintliga webbläsarsandboxen, aldrig med repository-token eller som Node-program på runnern.
+## Verifiering
 
-Faktiska utfall finns i Actions-artefakterna `v65-ui-evidence` och `v65-real-agent-evidence`. Ett lyckat fall är inte en jämförelse mot Luna/Sol, en generell intelligensmätning eller ett löfte om obegränsad gratis kapacitet. Befintliga begränsningar för webbläsare, filstorlek, nätverk och leverantörskvoter kvarstår.
+`tests/agent-boost-v65.mjs` och `tests/advice-slots-v65.mjs` testar rådgivning, falska referenser, kvotfel, sökning och återstart med simulerad AI. `tests/boost-browser-v65.mjs` testar faktisk Chromium-UI; `LIVE=1` använder verkliga anonyma inferensanrop. Agenten reparerar en intervallfunktion och kör en separat granskning. Testaren kör 40 extra fall och en kontroll av att resultatet inte delar muterbara indataintervall (81 assertions), samt prövar ett verkligt läsande specialistförslag. Genererad kod körs enbart i browser-sandboxen, inte på runnern med GitHub-behörigheter.
+
+`.github/workflows/release-v65.yml` testar exakt commit och har endast läsbehörighet. Den ändrar inte källkod under testet. Efter merge kontrollerar `published-v65.yml` publicerade filers SHA-256 och ett riktigt anonymt AI-anrop från den publika sidan utan källkodsersättning. Faktiska utfall finns i Actions-artefakterna, inte i versionsnumret.
