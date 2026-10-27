@@ -1,0 +1,84 @@
+name: JESP published source and real browser verification
+on:
+  workflow_run:
+    workflows: ['pages build and deployment']
+    types: [completed]
+permissions:
+  contents: read
+jobs:
+  published:
+    if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install pinned real browser
+        run: |
+          npm install --no-save --package-lock=false playwright@1.56.1
+          npx playwright install chromium
+      - name: Check published files and real anonymous AI (no intercepted source or model responses)
+        env:
+          EXPECTED_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          mkdir -p published-evidence
+          cat > _published-check.mjs <<'JS'
+          import {chromium} from 'playwright';
+          import assert from 'node:assert/strict';
+          import {readFileSync,readdirSync,writeFileSync} from 'node:fs';
+          import {createHash} from 'node:crypto';
+          const base='https://capstere.github.io/JESP_Game/';
+          const sha=process.env.EXPECTED_SHA;
+          const report={commit:sha,published:true,mockedAI:false,sourceSubstitution:false,files:[],requests:[],responses:[],success:false};
+          const hash=x=>createHash('sha256').update(x).digest('hex');
+          const files=['index.html',...readdirSync('agents').filter(n=>/\.(mjs|css)$/.test(n)).map(n=>'agents/'+n)];
+          let browser;
+          try{
+            for(const path of files){
+              const expected=hash(readFileSync(path));let actual='';
+              for(let attempt=0;attempt<3;attempt++){
+                const r=await fetch(base+path+'?release='+sha,{signal:AbortSignal.timeout(20000),cache:'no-store'});
+                if(r.ok)actual=hash(Buffer.from(await r.arrayBuffer()));
+                if(actual===expected)break;
+                if(attempt<2)await new Promise(r=>setTimeout(r,10000));
+              }
+              assert.equal(actual,expected,'Published bytes differ: '+path);
+              report.files.push({path,sha256:actual});
+            }
+            browser=await chromium.launch({headless:true});
+            const page=await browser.newPage();const pending=[];const errors=[];
+            page.on('pageerror',e=>errors.push(String(e)));
+            page.on('request',r=>{if(r.url().endsWith('/jesp-gateway/chat'))report.requests.push({authenticated:!!r.headers().authorization,model:r.postDataJSON()?.model});});
+            page.on('response',r=>{if(r.url().endsWith('/jesp-gateway/chat'))pending.push((async()=>{try{const d=await r.json();report.responses.push({status:r.status(),model:d.model,usage:d.usage,error:d.error});}catch{report.responses.push({status:r.status()});}})());});
+            await page.goto(base+'?release='+sha,{waitUntil:'domcontentloaded'});
+            await page.waitForFunction(()=>window.JESP_AGENT_BOOTED&&!document.getElementById('run').disabled,null,{timeout:45000});
+            assert.equal(await page.locator('#expertAssist').isChecked(),true);
+            assert.equal(await page.locator('#code').isChecked(),false);
+            assert.equal(await page.locator('#restoreCheckpoint').isVisible(),true);
+            report.version=await page.locator('.eyebrow').innerText();
+            await page.locator('#settings summary').click();await page.locator('#test').click();
+            await page.waitForFunction(()=>!document.getElementById('test').disabled,null,{timeout:170000});
+            await Promise.all(pending);
+            report.status=await page.locator('#status').innerText();report.answer=await page.locator('#answer').innerText();
+            assert.ok((await page.locator('#status').getAttribute('class')).includes('success'),report.status);
+            assert.equal(report.answer.trim(),'12');
+            assert.ok(report.requests.length>0&&report.requests.every(r=>!r.authenticated));
+            const answers=report.responses.filter(r=>r.status===200);assert.ok(answers.length>0&&answers.every(r=>r.usage?.cost===0));
+            assert.deepEqual(errors,[]);report.success=true;
+            await page.screenshot({path:'published-evidence/site.png',fullPage:true});
+            console.log('PUBLISHED_JESP_VERIFIED',JSON.stringify(report));
+          }catch(e){report.error=String(e);throw e;}
+          finally{writeFileSync('published-evidence/result.json',JSON.stringify(report,null,2));if(browser)await browser.close();}
+          JS
+          node _published-check.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: jesp-published-proof
+          path: published-evidence/
+          retention-days: 14
