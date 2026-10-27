@@ -1,0 +1,68 @@
+name: Stream preview performance and lifecycle
+on:
+  pull_request:
+    paths: ['agents/**', 'tests/stream-preview*', 'index.html', '.github/workflows/stream-preview-v642.yml']
+  push:
+    branches: [main]
+    paths: ['agents/**', 'tests/stream-preview*', 'index.html', '.github/workflows/stream-preview-v642.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: preview-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  preview:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          ref: 231d9aa402c7e411f6fc7e3d023640cf491ef846
+          path: .preview-baseline
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Fourteen deterministic preview tests
+        run: node --test tests/stream-preview-v642.mjs
+      - name: Install pinned browser test runtime
+        run: |
+          npm install --no-save --package-lock=false playwright@1.56.1
+          npx playwright install chromium
+      - name: Measure unchanged 6.4.1 baseline using identical simulated token burst
+        env:
+          JESP_SOURCE_DIR: .preview-baseline
+          JESP_BASELINE: '1'
+        run: |
+          node tests/stream-preview-browser-v642.mjs
+          cp preview-evidence/browser.json preview-evidence/baseline.json
+      - name: Verify optimized UI, output equality, cancel, scroll, role boundaries and JSON
+        run: node tests/stream-preview-browser-v642.mjs
+      - name: Preserve existing SSE safety and sandbox browser behavior
+        run: |
+          node tests/live-ui-v63.mjs
+          node tests/browser-verification-v610.mjs
+      - name: Verify measured reduction without claiming model acceleration
+        run: |
+          node --input-type=module <<'JS'
+          import {readFileSync,writeFileSync} from 'node:fs';
+          import assert from 'node:assert/strict';
+          const before=JSON.parse(readFileSync('preview-evidence/baseline.json')).burst;
+          const after=JSON.parse(readFileSync('preview-evidence/browser.json')).burst;
+          assert.equal(before.fragments,after.fragments);
+          assert.equal(before.modelCalls,after.modelCalls);
+          assert.ok(after.previewTextWrites<=2&&before.previewTextWrites>=1000);
+          const summary={scope:'synthetic 1000-fragment burst in actual Chromium; not model speed',mockedAI:true,before,after,reductionPercent:100*(1-after.previewTextWrites/before.previewTextWrites)};
+          writeFileSync('preview-evidence/comparison.json',JSON.stringify(summary,null,2));
+          console.log('PREVIEW_COMPARISON',JSON.stringify(summary));
+          JS
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: stream-preview-evidence
+          path: preview-evidence/
+          retention-days: 7
